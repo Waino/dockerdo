@@ -21,26 +21,58 @@ Installation
   .. code-block:: bash
 
     pip install dockerdo
+    dockerdo install
 
 Features
 --------
 
 * TODO
 
+Concept
+--------
+
+* TODO
+
+The three systems
+^^^^^^^^^^^^^^^^^
+
+Use case: remote development
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Use case: Dockerfile development
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Commands
+--------
+
+dockerdo install
+^^^^^^^^^^^^^^^^
+
+dockerdo init
+^^^^^^^^^^^^^
+
+dockerdo overlay
+^^^^^^^^^^^^^^^^
+
+dockerdo build
+^^^^^^^^^^^^^^
+
+dockerdo push
+^^^^^^^^^^^^^
+
+dockerdo start
+^^^^^^^^^^^^^^
+
+dockerdo run (alias dodo)
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+dockerdo stop
+^^^^^^^^^^^^^
+
+dockerdo history
+^^^^^^^^^^^^^^^^
+
 Configuration
 -------------
 
 * TODO
-
-Citing
-------
-
-If you use dockerdo in a scientific publication, please cite
-
-  .. code-block:: bibtex
-
-    TODO
-
-ArXiv preprint available online at
-
-    TODO
