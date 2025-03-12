@@ -1,0 +1,15 @@
+# Alt 1: Lint using ruff
+echo "####### ruff"
+ruff check
+
+# Alt 2: Reformat using black
+# echo "####### black"
+# black --skip-string-normalization
+
+# Unit tests
+echo "####### pytest"
+python -m pytest -m "not slow"
+
+# Type checking
+echo "####### mypy"
+mypy dockerdo
