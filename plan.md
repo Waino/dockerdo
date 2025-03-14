@@ -1,3 +1,8 @@
+# Code style
+
+- This project uses `mypy` for type checking: add type annotations to all function arguments and return values.
+- Write testable code. If it is possible to extract logic into a pure function, prefer refactoring to use the pure function instead of mixing logic with side effects.
+
 # Libraries
 
 ## click
@@ -18,6 +23,12 @@ Make sure that stdin, stdout, and stderr are piped through correctly: io should 
 
 Use `inotify-simple` to listen to filesystem writes in the sshfs-mounted subdirectories.
 Listen recursively in all the subdirectories of the mount point.
+
+## pydantic
+
+Use `pydantic` version 2 to represent and serialize data, and to validate the config.
+
+
 
 # File locations
 
