@@ -40,3 +40,10 @@ Use `pydantic` version 2 to represent and serialize data, and to validate the co
     - Create the subdirectories if they don't exist yet, but stop with an error if they exist and are not empty.
     - The remote host is mounted in a subdirectory matching the name of the remote machine.
     - The container is mounted in a subdirectory matching the name of the persistent session, or `container` for ephemeral sessions.
+
+
+# Using ssh
+
+- Use `ssh` with the `-J` option to jump via the remote host to the container.
+- Use `ssh -M -S ${SESSION_DIR}/ssh-socket` to create a master connection that can be used for multiple commands.
+  The following commands should use `ssh -S ${SESSION_DIR}/ssh-socket` to reuse the master connection.
