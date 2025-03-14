@@ -14,7 +14,7 @@ ch.setFormatter(formatter)
 logger.addHandler(ch)
 
 
-def add_file_handler(log_path: Path):
+def add_file_handler(log_path: Path) -> None:
     fh = logging.FileHandler(log_path)
     fh.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(module)s/%(funcName)s - %(levelname)s - %(message)s')
