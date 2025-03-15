@@ -28,7 +28,7 @@ Documentation = "https://dockerdo.readthedocs.io"
 Source = "https://github.com/waino/dockerdo"
 
 [project.scripts]
-dockerdo = "dockerdo:main"
+dockerdo = "dockerdo:cli"
 
 [tool.pytest.ini_options]
 addopts = "-v --cov=dockerdo --cov-report html --ignore-glob docs/**"

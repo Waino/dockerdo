@@ -1,11 +1,3 @@
-.. |ss| raw:: html
-
-    <strike>
-
-.. |se| raw:: html
-
-    </strike>
-
 ========
 dockerdo
 ========
@@ -86,46 +78,91 @@ Commands
 dockerdo install
 ^^^^^^^^^^^^^^^^
 
+* Creates the dockerdo user configuration file (`~/.config/dockerdo/dockerdorc`).
+* Adds the dodo alias to your shell's rc file (`.bashrc`).
+* Adds the dockerdo shell completion to `.bashrc`.
+
 dockerdo init
 ^^^^^^^^^^^^^
+
+* Initializes a new session.
+* Mounts the remote host build directory using `sshfs` into `${WORK_DIR}/${REMOTE_HOST}`.
+* To record filesystem events, use `dockerdo init --record &`.
+  The command will continue running in the background to record events using inotify.
+* To activate the session in the current shell, use `source <(dockerdo init)`.
+  Later, you can use `source ./local/share/dockerdo/${session_name}/activate` to reactivate a persistent session.
 
 dockerdo overlay
 ^^^^^^^^^^^^^^^^
 
+* Creates `Dockerfile.dockerdo` which overlays a given image, making it dockerdo compatible.
+    * Installs `sshd`.
+    * Copies your ssh key into `authorized_keys` inside the image.
+    * Changes the CMD to start `sshd` and sleep forever.
+* Supports base images using different distributions: `--distro [ubuntu|alpine]`.
+
 dockerdo build
 ^^^^^^^^^^^^^^
+
+* Runs `dockerdo overlay`, unless you already have a `Dockerfile.dockerdo`.
+* Runs `docker build` with the overlayed Dockerfile.
+* Supports remote build with the `--remote` flag.
+  Note that it is up to you to ensure that the Dockerfile is buildable on the remote host.
 
 dockerdo push
 ^^^^^^^^^^^^^
 
+* Only needed when the remote host is different from the local host.
+* Pushes the image to the docker registry, if configured.
+* If no registry is configured, the image is saved to a compressed tarball, copied to the remote host, and loaded.
+
 dockerdo start
 ^^^^^^^^^^^^^^
+
+* Starts the container on the remote host.
+* Mounts the container filesystem using `sshfs` into `${WORK_DIR}/container`.
+* Accepts the arguments for `docker run`.
 
 dockerdo export
 ^^^^^^^^^^^^^^^
 
+* Add or overwrite an environment variable in the session environment.
+
 dockerdo run (alias dodo)
 ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+* Runs a command in the container.
+* Note that you can pipe text in and out of the command, and the piping happens on the local host.
 
 dockerdo stop
 ^^^^^^^^^^^^^
 
+* Unmounts the container filesystem.
+* Stops the container.
+
 dockerdo history
 ^^^^^^^^^^^^^^^^
+
+* Prints the command history of the session.
+* Prints the list of modified files, if recording is enabled.
 
 dockerdo rm
 ^^^^^^^^^^^
 
+* Removes the container.
+* Unmounts the remote host build directory.
+* If you specify the `--delete` flag, the session directory is also deleted.
+
 Configuration
 -------------
 
-* TODO
+User configuration is in the `~/.config/dockerdo/dockerdorc` file.
 
 Caveats
 -------
 
 * **There is no persistent shell environment in the container.**
-  You can **not** set shell env variables using |ss| `dodo export VAR=VAL` |se|.
+  You can **not** set shell env variables using <del> `dodo export VAR=VAL` </del>.
   Instead, you must set the variables explicitly using either an env list file (Docker `--env-file`),
   or by setting the variables in a launcher script that you write and place in your image.
   To help you set up the env list, there is the `dockerdo export` subcommand

@@ -2,6 +2,11 @@
 
 import click
 import sys
+import importlib.resources
+from pathlib import Path
+
+from dockerdo.shell import get_user_config_dir
+from dockerdo.config import UserConfig
 
 
 # ## for subcommands
@@ -16,12 +21,27 @@ def cli() -> None:
 @cli.command()
 def install(no_bashrc: bool) -> int:
     """Install dockerdo"""
+    # Create the user config file
+    user_config_dir = get_user_config_dir()
+    user_config_dir.mkdir(parents=True, exist_ok=True)
+    user_config_path = user_config_dir / "dockerdorc"
+    if not user_config_path.exists():
+        initial_config = UserConfig()
+        with open(user_config_path, "w") as fout:
+            fout.write(initial_config.model_dump_json(indent=4))
+    if not no_bashrc:
+        with Path("~/.bashrc").expanduser().open("a") as fout:
+            # Add the dodo alias to ~/.bashrc)
+            fout.write("\n# Added by dockerdo\nalias dodo='dockerdo run'\n")
+            # Add the dockerdo shell completion to ~/.bashrc
+            bash_completion = importlib.resources.read_text("dockerdo", "dockerdo.bash-completion")
+            fout.write(bash_completion + "\n")
     return 0
 
 
 @cli.command()
 def init() -> int:
-    """Initialize dockerdo"""
+    """Initialize a dockerdo session"""
     return 0
 
 
