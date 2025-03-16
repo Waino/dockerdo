@@ -7,6 +7,7 @@ from pathlib import Path
 
 class UserConfig(BaseModel):
     """User configuration for dockerdo"""
+
     default_remote_host: str = "localhost"
     default_image: str = "ubuntu:latest"
     default_docker_registry: Optional[str] = None
@@ -15,6 +16,7 @@ class UserConfig(BaseModel):
 
 class Session(BaseModel):
     """A dockerdo session"""
+
     name: str
     container_name: str
     env: dict[str, str] = Field(default_factory=dict)

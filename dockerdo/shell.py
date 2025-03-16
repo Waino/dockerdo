@@ -43,9 +43,11 @@ def run_remote_command(command: str, session: Session) -> int:
     """
     Run a command on the remote host, piping through stdin, stdout, and stderr.
     """
-    wrapped_command = f'ssh -S {session.session_dir}/ssh-socket' \
-                      f' {session.remote_host}' \
-                      f' "cd {session.remote_host_build_dir} && {shlex.quote(command)}"'
+    wrapped_command = (
+        f"ssh -S {session.session_dir}/ssh-socket"
+        f" {session.remote_host}"
+        f' "cd {session.remote_host_build_dir} && {shlex.quote(command)}"'
+    )
     return run_local_command(wrapped_command)
 
 
@@ -56,11 +58,15 @@ def run_container_command(command: str, session: Session) -> int:
     container_work_dir = get_container_work_dir(session)
     if session.remote_host is None:
         # remote_host is the same as local_host
-        wrapped_command = f'ssh -S {session.session_dir}/ssh-socket' \
-                          f' {session.container_name}' \
-                          f' "cd {container_work_dir} && {shlex.quote(command)}"'
+        wrapped_command = (
+            f"ssh -S {session.session_dir}/ssh-socket"
+            f" {session.container_name}"
+            f' "cd {container_work_dir} && {shlex.quote(command)}"'
+        )
     else:
-        wrapped_command = f'ssh -S {session.session_dir}/ssh-socket' \
-                          f' -J {session.remote_host} {session.container_name}' \
-                          f' "cd {container_work_dir} && {shlex.quote(command)}"'
+        wrapped_command = (
+            f"ssh -S {session.session_dir}/ssh-socket"
+            f" -J {session.remote_host} {session.container_name}"
+            f' "cd {container_work_dir} && {shlex.quote(command)}"'
+        )
     return run_local_command(wrapped_command)

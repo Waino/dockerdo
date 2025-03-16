@@ -17,7 +17,7 @@ def cli() -> None:
 
 # @click.argument('vararg', type=str, nargs=-1)
 # @click.option('--enum', type=click.Choice(choices))
-@click.option('--no_bashrc', is_flag=True, help="Do not modify ~/.bashrc")
+@click.option("--no_bashrc", is_flag=True, help="Do not modify ~/.bashrc")
 @cli.command()
 def install(no_bashrc: bool) -> int:
     """Install dockerdo"""
@@ -36,11 +36,12 @@ def install(no_bashrc: bool) -> int:
             fout.write("\n# Added by dockerdo\nalias dodo='dockerdo run'\n")
             # Add the dockerdo shell completion to ~/.bashrc
             fout.write(
-                '[[ -f {bash_completion_path} ]]'
-                ' && source {bash_completion_path}\n'
+                "[[ -f {bash_completion_path} ]]" " && source {bash_completion_path}\n"
             )
         with bash_completion_path.open("w") as fout:
-            bash_completion = importlib.resources.read_text("dockerdo", "dockerdo.bash-completion")
+            bash_completion = importlib.resources.read_text(
+                "dockerdo", "dockerdo.bash-completion"
+            )
             fout.write(bash_completion)
     return 0
 
