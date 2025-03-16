@@ -116,8 +116,8 @@ dockerdo push
 * Pushes the image to the docker registry, if configured.
 * If no registry is configured, the image is saved to a compressed tarball, copied to the remote host, and loaded.
 
-dockerdo start
-^^^^^^^^^^^^^^
+dockerdo run
+^^^^^^^^^^^^
 
 * Starts the container on the remote host.
 * Mounts the container filesystem using `sshfs` into `${WORK_DIR}/container`.
@@ -128,10 +128,13 @@ dockerdo export
 
 * Add or overwrite an environment variable in the session environment.
 
-dockerdo run (alias dodo)
+dockerdo exec (alias dodo)
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-* Runs a command in the container.
+* Executes a command in the running container.
+* The working directory is deduced from the current working directory on the local host.
+  E.g. if you ran `dockerdo run` in `/home/user/project`, and are now in `/home/user/container/opt/mysoftware`, 
+  the working directory on the container is `/opt/mysoftware`.
 * Note that you can pipe text in and out of the command, and the piping happens on the local host.
 
 dockerdo stop
