@@ -1,16 +1,38 @@
 """dockerdo/dodo: Use your local dev tools for remote docker development"""
 
 import click
-import sys
 import importlib.resources
+import os
+import sys
 from pathlib import Path
+from typing import Optional
 
 from dockerdo.shell import get_user_config_dir
-from dockerdo.config import UserConfig
+from dockerdo.config import UserConfig, Session
+from dockerdo import prettyprint
+
+
+def load_user_config() -> UserConfig:
+    """Load the user config"""
+    user_config_path = get_user_config_dir() / "dockerdo.yaml"
+    if not user_config_path.exists():
+        return UserConfig()
+    with open(user_config_path, "r") as fin:
+        return UserConfig.from_yaml(fin.read())
+
+
+def load_session() -> Optional[Session]:
+    """Load a session"""
+    session_dir = os.environ.get("DOCKERDO_SESSION_DIR")
+    if session_dir is None:
+        prettyprint.error("$DOCKERDO_SESSION_DIR is not set")
+        return None
+    session = Session.load(Path(session_dir))
+    return session
 
 
 # ## for subcommands
-@click.group()
+@click.group(context_settings={'show_default': True})
 def cli() -> None:
     pass
 
@@ -41,20 +63,61 @@ def install(no_bashrc: bool) -> int:
             fout.write("\n# Added by dockerdo\nalias dodo='dockerdo run'\n")
             # Add the dockerdo shell completion to ~/.bashrc
             fout.write(
-                "[[ -f {bash_completion_path} ]]" " && source {bash_completion_path}\n"
+                f"[[ -f {bash_completion_path} ]] && source {bash_completion_path}\n"
             )
     return 0
 
 
 @cli.command()
-def init() -> int:
-    """Initialize a dockerdo session"""
+@click.argument("session_name", type=str, required=False)
+@click.option("--container", type=str, help="Container name [default: random]")
+@click.option("--record", is_flag=True, help="Record filesystem events")
+@click.option("--remote", "remote_host", type=str, help="Remote host")
+@click.option("--local", is_flag=True, help="Remote host is the same as local host")
+@click.option("--image", type=str, help="Docker image")
+@click.option("--registry", type=str, help="Docker registry", default=None)
+@click.option("--build_dir", type=Path, help="Remote host build directory", default=Path("."))
+def init(
+    record: bool,
+    session_name: Optional[str],
+    container: Optional[str],
+    remote_host: Optional[str],
+    local: bool,
+    image: Optional[str],
+    registry: Optional[str],
+    build_dir: Path,
+) -> int:
+    """
+    Initialize a dockerdo session.
+
+    SESSION_NAME is optional. If not given, an ephemeral session is created.
+    """
+    user_config = load_user_config()
+    session = Session.from_opts(
+        session_name=session_name,
+        container_name=container,
+        remote_host=remote_host,
+        local=local,
+        base_image=image,
+        docker_registry=registry,
+        record_inotify=record,
+        remote_host_build_dir=build_dir,
+        user_config=user_config,
+    )
+    session.save()
+    print(session.write_activate_script())
     return 0
 
 
 @cli.command()
+@click.option("--distro", type=click.Choice(["ubuntu", "alpine"]))
 def overlay() -> int:
     """Overlay a Dockerfile with the changes needed by dockerdo"""
+    user_config = load_user_config()
+    session = load_session()
+    if session is None:
+        return 1
+    prettyprint.action(f"Overlaying image {session.base_image} into Dockerfile.dockerdo")
     return 0
 
 

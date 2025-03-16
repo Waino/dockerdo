@@ -21,6 +21,7 @@ dependencies = [
     "click>=8.1.8",
     "pydantic>=2.10.6",
     "pyyaml>=6.0.2",
+    "rich>=13.9.4",
 ]
 
 [project.urls]

@@ -7,6 +7,7 @@ from pathlib import Path
 from subprocess import Popen
 from typing import Optional
 
+from dockerdo import prettyprint
 from dockerdo.config import Session
 
 
@@ -32,6 +33,9 @@ def get_container_work_dir(session: Session) -> Optional[Path]:
     Remove the prefix corresponding to the local work directory from the current working directory.
     If the current working directory is not inside the local work directory, return None.
     """
+    if session.local_work_dir is None:
+        prettyprint.warning("Session has no local work directory")
+        return None
     current_work_dir = Path(os.getcwd())
     if current_work_dir.is_relative_to(session.local_work_dir):
         return current_work_dir.relative_to(session.local_work_dir)
