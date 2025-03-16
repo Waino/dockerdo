@@ -24,12 +24,17 @@ def install(no_bashrc: bool) -> int:
     # Create the user config file
     user_config_dir = get_user_config_dir()
     user_config_dir.mkdir(parents=True, exist_ok=True)
-    user_config_path = user_config_dir / "dockerdorc"
+    user_config_path = user_config_dir / "dockerdo.yaml"
     bash_completion_path = user_config_dir / "dockerdo.bash-completion"
     if not user_config_path.exists():
         initial_config = UserConfig()
         with open(user_config_path, "w") as fout:
-            fout.write(initial_config.model_dump_json(indent=4))
+            fout.write(initial_config.model_dump_yaml())
+    with bash_completion_path.open("w") as fout:
+        bash_completion = importlib.resources.read_text(
+            "dockerdo", "dockerdo.bash-completion"
+        )
+        fout.write(bash_completion)
     if not no_bashrc:
         with Path("~/.bashrc").expanduser().open("a") as fout:
             # Add the dodo alias to ~/.bashrc)
@@ -38,11 +43,6 @@ def install(no_bashrc: bool) -> int:
             fout.write(
                 "[[ -f {bash_completion_path} ]]" " && source {bash_completion_path}\n"
             )
-        with bash_completion_path.open("w") as fout:
-            bash_completion = importlib.resources.read_text(
-                "dockerdo", "dockerdo.bash-completion"
-            )
-            fout.write(bash_completion)
     return 0
 
 

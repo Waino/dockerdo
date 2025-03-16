@@ -78,7 +78,7 @@ Commands
 dockerdo install
 ^^^^^^^^^^^^^^^^
 
-* Creates the dockerdo user configuration file (`~/.config/dockerdo/dockerdorc`).
+* Creates the dockerdo user configuration file (`~/.config/dockerdo/dockerdo.yaml`).
 * Adds the dodo alias to your shell's rc file (`.bashrc`).
 * Adds the dockerdo shell completion to `.bashrc`.
 
@@ -129,7 +129,7 @@ dockerdo export
 * Add or overwrite an environment variable in the session environment.
 
 dockerdo exec (alias dodo)
-^^^^^^^^^^^^^^^^^^^^^^^^^
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * Executes a command in the running container.
 * The working directory is deduced from the current working directory on the local host.
@@ -159,7 +159,7 @@ dockerdo rm
 Configuration
 -------------
 
-User configuration is in the `~/.config/dockerdo/dockerdorc` file.
+User configuration is in the `~/.config/dockerdo/dockerdo.yaml` file.
 
 Caveats
 -------

@@ -1,14 +1,28 @@
 """User configuration and session data"""
 
-from pydantic import BaseModel, Field
-from typing import Optional, Set
+import yaml
 from pathlib import Path
+from pydantic import BaseModel as PydanticBaseModel
+from pydantic import Field
+from typing import Optional, Set
+
+
+class BaseModel(PydanticBaseModel):
+    """Extend Pydantic BaseModel with common functionality"""
+
+    class Config:
+        """Pydantic config"""
+        extra = "ignore"
+
+    def model_dump_yaml(self) -> str:
+        """Dump the model as yaml"""
+        return yaml.dump(self.model_dump(), sort_keys=True)
 
 
 class UserConfig(BaseModel):
     """User configuration for dockerdo"""
 
-    default_remote_host: str = "localhost"
+    default_remote_host: Optional[str] = None
     default_image: str = "ubuntu:latest"
     default_docker_registry: Optional[str] = None
     record_inotify: bool = False
