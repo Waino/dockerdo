@@ -13,7 +13,7 @@ COPY {ssh_key_path} {homedir}/.ssh/authorized_keys
 RUN chmod 600 {homedir}/.ssh/authorized_keys
 
 CMD ["/usr/sbin/sshd", "-D", "&&", "sleep", "infinity"]
-"""
+""".strip()
 
 ALPINE_DOCKERFILE = r"""
 FROM {image}
@@ -26,7 +26,7 @@ COPY {ssh_key_path} {homedir}/.ssh/authorized_keys
 RUN chmod 600 {homedir}/.ssh/authorized_keys
 
 CMD ["/usr/sbin/sshd", "-D", "&&", "sleep", "infinity"]
-"""
+""".strip()
 
 DOCKERFILES = {
     "ubuntu": UBUNTU_DOCKERFILE,

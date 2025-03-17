@@ -27,7 +27,7 @@ def load_session() -> Optional[Session]:
     """Load a session"""
     session_dir = os.environ.get("DOCKERDO_SESSION_DIR")
     if session_dir is None:
-        prettyprint.error("$DOCKERDO_SESSION_DIR is not set")
+        prettyprint.error("$DOCKERDO_SESSION_DIR is not set. Did you source the activate script?")
         return None
     session = Session.load(Path(session_dir))
     return session
@@ -55,6 +55,8 @@ def install(no_bashrc: bool) -> int:
         with open(user_config_path, "w") as fout:
             fout.write(initial_config.model_dump_yaml())
         prettyprint.action("Created", f"config file {user_config_path}")
+    else:
+        prettyprint.warning(f"Not overwriting existing config file {user_config_path}")
     with bash_completion_path.open("w") as fout:
         bash_completion = importlib.resources.read_text(
             "dockerdo", "dockerdo.bash-completion"

@@ -79,6 +79,9 @@ class Session(BaseModel):
             session_name = session_dir.name.replace("dockerdo_", "")
         else:
             session_dir = Path(f"~/.local/share/dockerdo/{session_name}").expanduser()
+            if session_dir.exists():
+                # FIXME: reactivate or overwrite?
+                prettyprint.warning(f"Session directory {session_dir} already exists")
         if container_name is None:
             container_name = ephemeral_container_name()
         distro = distro if distro is not None else user_config.default_distro

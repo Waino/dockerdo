@@ -20,6 +20,7 @@ def run_local_command(command: str) -> int:
     print(args)     # Debugging
     return 0
     if False:
+        # FIXME: cwd required for docker build
         with Popen(args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr) as process:
             process.wait()
             return process.returncode
