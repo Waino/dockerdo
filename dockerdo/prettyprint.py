@@ -3,8 +3,8 @@ import rich
 import sys
 
 
-def action(text: str) -> None:
-    rich.print(f"[bold green](+)[/bold green] {text}", file=sys.stderr)
+def action(verb: str, text: str) -> None:
+    rich.print(f"[bold green](+) {verb:>10}[/bold green] {text}", file=sys.stderr)
 
 
 def warning(text: str) -> None:

@@ -7,9 +7,11 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from dockerdo.shell import get_user_config_dir
-from dockerdo.config import UserConfig, Session
 from dockerdo import prettyprint
+from dockerdo.config import UserConfig, Session
+from dockerdo.docker import DISTROS, format_dockerfile
+from dockerdo.shell import get_user_config_dir, run_local_command, run_remote_command
+from dockerdo.utils import make_name_tag
 
 
 def load_user_config() -> UserConfig:
@@ -52,11 +54,13 @@ def install(no_bashrc: bool) -> int:
         initial_config = UserConfig()
         with open(user_config_path, "w") as fout:
             fout.write(initial_config.model_dump_yaml())
+        prettyprint.action("Created", f"config file {user_config_path}")
     with bash_completion_path.open("w") as fout:
         bash_completion = importlib.resources.read_text(
             "dockerdo", "dockerdo.bash-completion"
         )
         fout.write(bash_completion)
+        prettyprint.action("Created", f"bash completion file {bash_completion_path}")
     if not no_bashrc:
         with Path("~/.bashrc").expanduser().open("a") as fout:
             # Add the dodo alias to ~/.bashrc)
@@ -65,6 +69,7 @@ def install(no_bashrc: bool) -> int:
             fout.write(
                 f"[[ -f {bash_completion_path} ]] && source {bash_completion_path}\n"
             )
+            prettyprint.action("Modified", "~/.bashrc")
     return 0
 
 
@@ -74,7 +79,9 @@ def install(no_bashrc: bool) -> int:
 @click.option("--record", is_flag=True, help="Record filesystem events")
 @click.option("--remote", "remote_host", type=str, help="Remote host")
 @click.option("--local", is_flag=True, help="Remote host is the same as local host")
+@click.option("--distro", type=click.Choice(DISTROS), default=None)
 @click.option("--image", type=str, help="Docker image")
+@click.option("--user", "container_username", type=str, help="Container username", default="root")
 @click.option("--registry", type=str, help="Docker registry", default=None)
 @click.option("--build_dir", type=Path, help="Remote host build directory", default=Path("."))
 def init(
@@ -83,7 +90,9 @@ def init(
     container: Optional[str],
     remote_host: Optional[str],
     local: bool,
+    distro: Optional[str],
     image: Optional[str],
+    container_username: str,
     registry: Optional[str],
     build_dir: Path,
 ) -> int:
@@ -98,7 +107,9 @@ def init(
         container_name=container,
         remote_host=remote_host,
         local=local,
+        distro=distro,
         base_image=image,
+        container_username=container_username,
         docker_registry=registry,
         record_inotify=record,
         remote_host_build_dir=build_dir,
@@ -109,63 +120,125 @@ def init(
     return 0
 
 
-@cli.command()
-@click.option("--distro", type=click.Choice(["ubuntu", "alpine"]))
-def overlay() -> int:
+def _overlay(distro: Optional[str], image: Optional[str]) -> int:
     """Overlay a Dockerfile with the changes needed by dockerdo"""
     user_config = load_user_config()
     session = load_session()
     if session is None:
         return 1
-    prettyprint.action(f"Overlaying image {session.base_image} into Dockerfile.dockerdo")
+
+    if image is not None:
+        session.base_image = image
+    if distro is not None:
+        session.distro = distro
+    cwd = Path(os.getcwd())
+    dockerfile = cwd / "Dockerfile.dockerdo"
+    dockerfile_content = format_dockerfile(
+        distro=session.distro,
+        image=session.base_image,
+        homedir=session.get_homedir(),
+        ssh_key_path=user_config.ssh_key_path,
+    )
+    with open(dockerfile, "w") as f:
+        f.write(dockerfile_content)
+    prettyprint.action("Overlayed", f"image {session.base_image} into Dockerfile.dockerdo")
     return 0
 
 
 @cli.command()
-def build() -> int:
+@click.option("--distro", type=click.Choice(DISTROS), default=None)
+@click.option("--image", type=str, help="Docker image", default=None)
+def overlay(distro: Optional[str], image: Optional[str]) -> int:
+    """Overlay a Dockerfile with the changes needed by dockerdo"""
+    return _overlay(distro, image)
+
+
+@cli.command()
+@click.option("--remote", is_flag=True, help="Build on remote host")
+def build(remote) -> int:
     """Build a Docker image"""
+    session = load_session()
+    if session is None:
+        return 1
+
+    cwd = Path(os.getcwd())
+    dockerfile = cwd / "Dockerfile.dockerdo"
+    if not dockerfile.exists():
+        _overlay(session.distro, session.base_image)
+    session.name_tag = make_name_tag(
+        session.docker_registry,
+        session.base_image,
+        session.name,
+    )
+    if remote:
+        run_remote_command(f"docker build -t {session.name_tag} -f {dockerfile} .", session)
+        prettyprint.action("Built", f"image {session.name_tag} on remote host {session.remote_host}")
+    else:
+        run_local_command(f"docker build -t {session.name_tag} -f {dockerfile} .")
+        prettyprint.action("Built", f"image {session.name_tag} locally")
     return 0
 
 
 @cli.command()
 def push() -> int:
     """Push a Docker image"""
+    session = load_session()
+    if session is None:
+        return 1
     return 0
 
 
 @cli.command()
 def run() -> int:
     """Start the container"""
+    session = load_session()
+    if session is None:
+        return 1
     return 0
 
 
 @cli.command()
 def export() -> int:
     """Add an environment variable to the env list"""
+    session = load_session()
+    if session is None:
+        return 1
     return 0
 
 
 @cli.command()
 def exec() -> int:
     """Execute a command in the container"""
+    session = load_session()
+    if session is None:
+        return 1
     return 0
 
 
 @cli.command()
 def stop() -> int:
     """Stop the container"""
+    session = load_session()
+    if session is None:
+        return 1
     return 0
 
 
 @cli.command()
 def history() -> int:
     """Show the history of a container"""
+    session = load_session()
+    if session is None:
+        return 1
     return 0
 
 
 @cli.command()
 def rm() -> int:
     """Remove a container"""
+    session = load_session()
+    if session is None:
+        return 1
     return 0
 
 

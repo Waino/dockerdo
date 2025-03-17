@@ -27,9 +27,11 @@ class UserConfig(BaseModel):
     """User configuration for dockerdo"""
 
     default_remote_host: Optional[str] = None
+    default_distro: str = "ubuntu"
     default_image: str = "ubuntu:latest"
     default_docker_registry: Optional[str] = None
     always_record_inotify: bool = False
+    ssh_key_path: Path = Path("~/.ssh/id_rsa.pub").expanduser()
 
     @classmethod
     def from_yaml(cls, yaml_str: str) -> "UserConfig":
@@ -44,7 +46,10 @@ class Session(BaseModel):
     container_name: str
     env: dict[str, str] = Field(default_factory=dict)
     remote_host: Optional[str] = None
+    distro: str
     base_image: str
+    name_tag: Optional[str] = None
+    container_username: str = "root"
     docker_registry: Optional[str] = None
     record_inotify: bool = False
     session_dir: Path
@@ -52,6 +57,58 @@ class Session(BaseModel):
     local_work_dir: Optional[Path] = None
     modified_files: Set[Path] = set()
     container_state: Literal["nothing", "created", "running", "stopped"] = "nothing"
+
+    @classmethod
+    def from_opts(
+        cls,
+        session_name: Optional[str],
+        container_name: Optional[str],
+        remote_host: Optional[str],
+        local: bool,
+        distro: Optional[str],
+        base_image: Optional[str],
+        container_username: str,
+        docker_registry: Optional[str],
+        record_inotify: bool,
+        remote_host_build_dir: Path,
+        user_config: UserConfig,
+    ) -> "Session":
+        if session_name is None:
+            session_dir = Path(mkdtemp(prefix="dockerdo_"))
+            prettyprint.action("Created", "ephemeral session directory {session_dir}")
+            session_name = session_dir.name.replace("dockerdo_", "")
+        else:
+            session_dir = Path(f"~/.local/share/dockerdo/{session_name}").expanduser()
+        if container_name is None:
+            container_name = ephemeral_container_name()
+        distro = distro if distro is not None else user_config.default_distro
+        base_image = base_image if base_image is not None else user_config.default_image
+        if local:
+            remote_host = None
+        else:
+            remote_host = remote_host if remote_host is not None else user_config.default_remote_host
+        registry = docker_registry if docker_registry is not None else user_config.default_docker_registry
+        record_inotify = record_inotify or user_config.always_record_inotify
+        session = Session(
+            name=session_name,
+            container_name=container_name,
+            remote_host=remote_host,
+            distro=distro,
+            base_image=base_image,
+            container_username=container_username,
+            docker_registry=registry,
+            record_inotify=record_inotify,
+            session_dir=session_dir,
+            remote_host_build_dir=remote_host_build_dir,
+        )
+        return session
+
+    def get_homedir(self) -> Path:
+        """Get the home directory for the session"""
+        if self.container_username == 'root':
+            return Path("/root")
+        else:
+            return Path(f"/home/{self.container_username}")
 
     def record_command(self, command: str) -> None:
         """
@@ -74,52 +131,12 @@ class Session(BaseModel):
             for key, value in sorted(self.env.items()):
                 f.write(f"{key}={value}\n")
 
-    @classmethod
-    def from_opts(
-        cls,
-        session_name: Optional[str],
-        container_name: Optional[str],
-        remote_host: Optional[str],
-        local: bool,
-        base_image: Optional[str],
-        docker_registry: Optional[str],
-        record_inotify: bool,
-        remote_host_build_dir: Path,
-        user_config: UserConfig,
-    ) -> "Session":
-        if session_name is None:
-            session_dir = Path(mkdtemp(prefix="dockerdo_"))
-            prettyprint.action(f"Created ephemeral session directory {session_dir}")
-            session_name = session_dir.name.replace("dockerdo_", "")
-        else:
-            session_dir = Path(f"~/.local/share/dockerdo/{session_name}").expanduser()
-        if container_name is None:
-            container_name = ephemeral_container_name()
-        base_image = base_image if base_image is not None else user_config.default_image
-        if local:
-            remote_host = None
-        else:
-            remote_host = remote_host if remote_host is not None else user_config.default_remote_host
-        registry = docker_registry if docker_registry is not None else user_config.default_docker_registry
-        record_inotify = record_inotify or user_config.always_record_inotify
-        session = Session(
-            name=session_name,
-            container_name=container_name,
-            remote_host=remote_host,
-            base_image=base_image,
-            docker_registry=registry,
-            record_inotify=record_inotify,
-            session_dir=session_dir,
-            remote_host_build_dir=remote_host_build_dir,
-        )
-        return session
-
     def save(self) -> None:
         """Save the session to a file in the session directory"""
         session_file = self.session_dir / "session.yaml"
         if not self.session_dir.exists():
             self.session_dir.mkdir(parents=True, exist_ok=True)
-            prettyprint.action(f"Created persistent session directory {self.session_dir}")
+            prettyprint.action("Created", f"persistent session directory {self.session_dir}")
         with open(session_file, "w") as f:
             f.write(self.model_dump_yaml())
 

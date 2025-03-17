@@ -17,9 +17,12 @@ def run_local_command(command: str) -> int:
     The command may be potentially long-lived and both read and write large amounts of data.
     """
     args = shlex.split(command)
-    with Popen(args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr) as process:
-        process.wait()
-        return process.returncode
+    print(args)     # Debugging
+    return 0
+    if False:
+        with Popen(args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr) as process:
+            process.wait()
+            return process.returncode
 
 
 def get_user_config_dir() -> Path:

@@ -4,6 +4,7 @@ import random
 import string
 import time
 from pathlib import Path
+from typing import Optional
 
 
 def ephemeral_container_name() -> str:
@@ -15,6 +16,22 @@ def ephemeral_container_name() -> str:
     timestamp = int(time.time())
     name = f"{letters}{timestamp}"
     return name
+
+
+def make_name_tag(
+    docker_registry: Optional[str],
+    base_image: str,
+    session_name: str,
+) -> str:
+    if ':' in base_image:
+        base_image, base_image_tag = base_image.split(':')
+    else:
+        base_image_tag = "latest"
+    name_tag = f"dockerdo-{base_image}:{base_image_tag}-{session_name}"
+    if docker_registry is None:
+        return name_tag
+    else:
+        return f"{docker_registry}/{name_tag}"
 
 
 def empty_or_nonexistent(path: Path) -> bool:
