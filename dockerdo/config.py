@@ -54,7 +54,7 @@ class Session(BaseModel):
     record_inotify: bool = False
     session_dir: Path
     remote_host_build_dir: Path
-    local_work_dir: Optional[Path] = None
+    local_work_dir: Path
     modified_files: Set[Path] = set()
     container_state: Literal["nothing", "created", "running", "stopped"] = "nothing"
 
@@ -71,6 +71,7 @@ class Session(BaseModel):
         docker_registry: Optional[str],
         record_inotify: bool,
         remote_host_build_dir: Path,
+        local_work_dir: Path,
         user_config: UserConfig,
     ) -> Optional["Session"]:
         """
@@ -112,6 +113,7 @@ class Session(BaseModel):
             record_inotify=record_inotify,
             session_dir=session_dir,
             remote_host_build_dir=remote_host_build_dir,
+            local_work_dir=local_work_dir,
         )
         return session
 

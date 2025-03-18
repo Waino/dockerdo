@@ -22,9 +22,6 @@ def get_container_work_dir(session: Session) -> Optional[Path]:
     Remove the prefix corresponding to the local work directory from the current working directory.
     If the current working directory is not inside the local work directory, return None.
     """
-    if session.local_work_dir is None:
-        prettyprint.warning("Session has no local work directory. Must 'dockerdo run' first.")
-        return None
     current_work_dir = Path(os.getcwd())
     if current_work_dir.is_relative_to(session.local_work_dir):
         return current_work_dir.relative_to(session.local_work_dir)
@@ -88,13 +85,13 @@ def run_container_command(command: str, session: Session) -> int:
     return run_local_command(wrapped_command, cwd=cwd)
 
 
-def run_docker_save_pipe(image_tag: str, cwd: Path) -> int:
+def run_docker_save_pipe(image_tag: str, local_work_dir: Path, sshfs_remote_dir: Path) -> int:
     """Run docker save, piping the output via pigz to compress it, and finally into a file"""
     try:
         args = shlex.split(f"docker save {image_tag}")
-        with Popen(args, stdout=PIPE, cwd=cwd) as docker:
+        with Popen(args, stdout=PIPE, cwd=local_work_dir) as docker:
             output = check_output(("pigz"), stdin=docker.stdout)
-            with open(f"{image_tag}.tar.gz", "wb") as fout:
+            with open(sshfs_remote_dir / f"{image_tag}.tar.gz", "wb") as fout:
                 fout.write(output)
     except CalledProcessError as e:
         prettyprint.error(f"Error running docker save: {e}")

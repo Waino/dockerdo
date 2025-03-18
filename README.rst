@@ -86,6 +86,7 @@ dockerdo init
 ^^^^^^^^^^^^^
 
 * Initializes a new session.
+* Defines the work dir `${WORK_DIR}` on the local host.
 * Mounts the remote host build directory using `sshfs` into `${WORK_DIR}/${REMOTE_HOST}`.
 * To record filesystem events, use `dockerdo init --record &`.
   The command will continue running in the background to record events using inotify.
@@ -120,7 +121,6 @@ dockerdo run
 ^^^^^^^^^^^^
 
 * Starts the container on the remote host.
-* Defines the work dir on the local host.
 * Mounts the container filesystem using `sshfs` into `${WORK_DIR}/container`.
 * Accepts the arguments for `docker run`.
 
@@ -134,7 +134,7 @@ dockerdo exec (alias dodo)
 
 * Executes a command in the running container.
 * The working directory is deduced from the current working directory on the local host.
-  E.g. if you ran `dockerdo run` in `/home/user/project`, and are now in `/home/user/container/opt/mysoftware`, 
+  E.g. if you ran `dockerdo init` in `/home/user/project`, and are now in `/home/user/container/opt/mysoftware`, 
   the working directory on the container is `/opt/mysoftware`.
 * Note that you can pipe text in and out of the command, and the piping happens on the local host.
 

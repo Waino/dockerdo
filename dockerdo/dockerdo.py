@@ -10,7 +10,9 @@ from typing import Optional
 from dockerdo import prettyprint
 from dockerdo.config import UserConfig, Session
 from dockerdo.docker import DISTROS, format_dockerfile
-from dockerdo.shell import get_user_config_dir, run_local_command, run_remote_command, run_docker_save_pipe
+from dockerdo.shell import (
+    get_user_config_dir, run_local_command, run_remote_command, run_docker_save_pipe, get_sshfs_remote_dir
+)
 from dockerdo.utils import make_image_tag
 
 
@@ -104,6 +106,7 @@ def init(
     SESSION_NAME is optional. If not given, an ephemeral session is created.
     """
     user_config = load_user_config()
+    cwd = Path(os.getcwd())
     session = Session.from_opts(
         session_name=session_name,
         container_name=container,
@@ -115,6 +118,7 @@ def init(
         docker_registry=registry,
         record_inotify=record,
         remote_host_build_dir=build_dir,
+        local_work_dir=cwd,
         user_config=user_config,
     )
     if session is None:
@@ -192,19 +196,22 @@ def push() -> int:
     session = load_session()
     if session is None:
         return 1
-    cwd = session.local_work_dir
-    if cwd is None:
-        cwd = Path(os.getcwd())
     if session.image_tag is None:
         prettyprint.error("Must 'dockerdo build' first")
         return 1
 
     if session.docker_registry is not None:
-        run_local_command(f"docker push {session.image_tag}", cwd=cwd)
+        run_local_command(f"docker push {session.image_tag}", cwd=session.local_work_dir)
     elif session.remote_host is not None:
-        run_docker_save_pipe(session.image_tag, cwd=cwd)
-        # FIXME: copy the file
-        run_remote_command(f"pigz -d {session.name}.tar.gz | docker load", session)
+        sshfs_remote_dir = get_sshfs_remote_dir(session)
+        assert sshfs_remote_dir is not None
+        run_docker_save_pipe(
+            session.image_tag,
+            local_work_dir=session.local_work_dir,
+            sshfs_remote_dir=sshfs_remote_dir,
+        )
+        remote_path = session.remote_host_build_dir / f"{session.name}.tar.gz"
+        run_remote_command(f"pigz -d {remote_path} | docker load", session)
     else:
         prettyprint.warning("No docker registry or remote host configured. Not pushing image.")
         return 1
