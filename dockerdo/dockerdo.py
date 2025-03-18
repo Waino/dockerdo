@@ -60,7 +60,7 @@ def install(no_bashrc: bool) -> int:
         initial_config = UserConfig()
         with open(user_config_path, "w") as fout:
             fout.write(initial_config.model_dump_yaml())
-        prettyprint.action("Created", f"config file {user_config_path}")
+        prettyprint.action("local", "Created", f"config file {user_config_path}")
     else:
         prettyprint.warning(f"Not overwriting existing config file {user_config_path}")
     with bash_completion_path.open("w") as fout:
@@ -68,7 +68,9 @@ def install(no_bashrc: bool) -> int:
             "dockerdo", "dockerdo.bash-completion"
         )
         fout.write(bash_completion)
-        prettyprint.action("Created", f"bash completion file {bash_completion_path}")
+        prettyprint.action(
+            "local", "Created", f"bash completion file {bash_completion_path}"
+        )
     if not no_bashrc:
         with Path("~/.bashrc").expanduser().open("a") as fout:
             # Add the dodo alias to ~/.bashrc)
@@ -77,7 +79,7 @@ def install(no_bashrc: bool) -> int:
             fout.write(
                 f"[[ -f {bash_completion_path} ]] && source {bash_completion_path}\n"
             )
-            prettyprint.action("Modified", "~/.bashrc")
+            prettyprint.action("local", "Modified", "~/.bashrc")
     return 0
 
 
@@ -158,7 +160,7 @@ def _overlay(distro: Optional[str], image: Optional[str]) -> int:
     with open(dockerfile, "w") as f:
         f.write(dockerfile_content)
     prettyprint.action(
-        "Overlayed", f"image {session.base_image} into Dockerfile.dockerdo"
+        "local", "Overlayed", f"image {session.base_image} into Dockerfile.dockerdo"
     )
     return 0
 
@@ -203,14 +205,14 @@ def build(remote) -> int:
             session,
         )
         prettyprint.action(
-            "Built", f"image {session.image_tag} on remote host {session.remote_host}"
+            "remote", "Built", f"image {session.image_tag} on {session.remote_host}"
         )
     else:
         run_local_command(
             build_cmd,
             cwd=cwd,
         )
-        prettyprint.action("Built", f"image {session.image_tag} locally")
+        prettyprint.action("local", "Built", f"image {session.image_tag}")
     return 0
 
 

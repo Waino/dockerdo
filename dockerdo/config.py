@@ -86,7 +86,9 @@ class Session(BaseModel):
         """
         if session_name is None:
             session_dir = Path(mkdtemp(prefix="dockerdo_"))
-            prettyprint.action("Created", "ephemeral session directory {session_dir}")
+            prettyprint.action(
+                "local", "Created", "ephemeral session directory {session_dir}"
+            )
             session_name = session_dir.name.replace("dockerdo_", "")
         else:
             session_dir = Path(f"~/.local/share/dockerdo/{session_name}").expanduser()
@@ -163,7 +165,7 @@ class Session(BaseModel):
         if not self.session_dir.exists():
             self.session_dir.mkdir(parents=True, exist_ok=True)
             prettyprint.action(
-                "Created", f"persistent session directory {self.session_dir}"
+                "local", "Created", f"persistent session directory {self.session_dir}"
             )
         with open(session_file, "w") as f:
             f.write(self.model_dump_yaml())
