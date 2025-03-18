@@ -18,7 +18,7 @@ def ephemeral_container_name() -> str:
     return name
 
 
-def make_name_tag(
+def make_image_tag(
     docker_registry: Optional[str],
     base_image: str,
     session_name: str,
@@ -27,11 +27,11 @@ def make_name_tag(
         base_image, base_image_tag = base_image.split(':')
     else:
         base_image_tag = "latest"
-    name_tag = f"dockerdo-{base_image}:{base_image_tag}-{session_name}"
+    image_tag = f"dockerdo-{base_image}:{base_image_tag}-{session_name}"
     if docker_registry is None:
-        return name_tag
+        return image_tag
     else:
-        return f"{docker_registry}/{name_tag}"
+        return f"{docker_registry}/{image_tag}"
 
 
 def empty_or_nonexistent(path: Path) -> bool:

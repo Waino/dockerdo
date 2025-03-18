@@ -4,26 +4,11 @@ import os
 import shlex
 import sys
 from pathlib import Path
-from subprocess import Popen
+from subprocess import Popen, PIPE, check_output, CalledProcessError
 from typing import Optional
 
 from dockerdo import prettyprint
 from dockerdo.config import Session
-
-
-def run_local_command(command: str) -> int:
-    """
-    Run a command on the local host, piping through stdin, stdout, and stderr.
-    The command may be potentially long-lived and both read and write large amounts of data.
-    """
-    args = shlex.split(command)
-    print(args)     # Debugging
-    return 0
-    if False:
-        # FIXME: cwd required for docker build
-        with Popen(args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr) as process:
-            process.wait()
-            return process.returncode
 
 
 def get_user_config_dir() -> Path:
@@ -38,13 +23,34 @@ def get_container_work_dir(session: Session) -> Optional[Path]:
     If the current working directory is not inside the local work directory, return None.
     """
     if session.local_work_dir is None:
-        prettyprint.warning("Session has no local work directory")
+        prettyprint.warning("Session has no local work directory. Must 'dockerdo run' first.")
         return None
     current_work_dir = Path(os.getcwd())
     if current_work_dir.is_relative_to(session.local_work_dir):
         return current_work_dir.relative_to(session.local_work_dir)
     else:
         return None
+
+
+def get_sshfs_remote_dir(session: Session) -> Optional[Path]:
+    """Get the path on the local host where the remote host filesystem is mounted"""
+    if session.remote_host is None:
+        return None
+    return session.local_work_dir / session.remote_host
+
+
+def run_local_command(command: str, cwd: Path) -> int:
+    """
+    Run a command on the local host, piping through stdin, stdout, and stderr.
+    The command may be potentially long-lived and both read and write large amounts of data.
+    """
+    args = shlex.split(command)
+    print(' '.join(args))     # Debugging
+    return 0
+    if False:
+        with Popen(args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, cwd=cwd) as process:
+            process.wait()
+            return process.returncode
 
 
 def run_remote_command(command: str, session: Session) -> int:
@@ -56,7 +62,8 @@ def run_remote_command(command: str, session: Session) -> int:
         f" {session.remote_host}"
         f' "cd {session.remote_host_build_dir} && {shlex.quote(command)}"'
     )
-    return run_local_command(wrapped_command)
+    cwd = Path(os.getcwd())
+    return run_local_command(wrapped_command, cwd=cwd)
 
 
 def run_container_command(command: str, session: Session) -> int:
@@ -77,4 +84,19 @@ def run_container_command(command: str, session: Session) -> int:
             f" -J {session.remote_host} {session.container_name}"
             f' "cd {container_work_dir} && {shlex.quote(command)}"'
         )
-    return run_local_command(wrapped_command)
+    cwd = Path(os.getcwd())
+    return run_local_command(wrapped_command, cwd=cwd)
+
+
+def run_docker_save_pipe(image_tag: str, cwd: Path) -> int:
+    """Run docker save, piping the output via pigz to compress it, and finally into a file"""
+    try:
+        args = shlex.split(f"docker save {image_tag}")
+        with Popen(args, stdout=PIPE, cwd=cwd) as docker:
+            output = check_output(("pigz"), stdin=docker.stdout)
+            with open(f"{image_tag}.tar.gz", "wb") as fout:
+                fout.write(output)
+    except CalledProcessError as e:
+        prettyprint.error(f"Error running docker save: {e}")
+        return e.returncode
+    return 0

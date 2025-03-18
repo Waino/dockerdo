@@ -10,8 +10,8 @@ from typing import Optional
 from dockerdo import prettyprint
 from dockerdo.config import UserConfig, Session
 from dockerdo.docker import DISTROS, format_dockerfile
-from dockerdo.shell import get_user_config_dir, run_local_command, run_remote_command
-from dockerdo.utils import make_name_tag
+from dockerdo.shell import get_user_config_dir, run_local_command, run_remote_command, run_docker_save_pipe
+from dockerdo.utils import make_image_tag
 
 
 def load_user_config() -> UserConfig:
@@ -117,6 +117,8 @@ def init(
         remote_host_build_dir=build_dir,
         user_config=user_config,
     )
+    if session is None:
+        return 1
     session.save()
     print(session.write_activate_script())
     return 0
@@ -167,17 +169,20 @@ def build(remote) -> int:
     dockerfile = cwd / "Dockerfile.dockerdo"
     if not dockerfile.exists():
         _overlay(session.distro, session.base_image)
-    session.name_tag = make_name_tag(
+    session.image_tag = make_image_tag(
         session.docker_registry,
         session.base_image,
         session.name,
     )
     if remote:
-        run_remote_command(f"docker build -t {session.name_tag} -f {dockerfile} .", session)
-        prettyprint.action("Built", f"image {session.name_tag} on remote host {session.remote_host}")
+        run_remote_command(f"docker build -t {session.image_tag} -f {dockerfile} .", session)
+        prettyprint.action("Built", f"image {session.image_tag} on remote host {session.remote_host}")
     else:
-        run_local_command(f"docker build -t {session.name_tag} -f {dockerfile} .")
-        prettyprint.action("Built", f"image {session.name_tag} locally")
+        run_local_command(
+            f"docker build -t {session.image_tag} -f {dockerfile} .",
+            cwd=cwd,
+        )
+        prettyprint.action("Built", f"image {session.image_tag} locally")
     return 0
 
 
@@ -186,6 +191,22 @@ def push() -> int:
     """Push a Docker image"""
     session = load_session()
     if session is None:
+        return 1
+    cwd = session.local_work_dir
+    if cwd is None:
+        cwd = Path(os.getcwd())
+    if session.image_tag is None:
+        prettyprint.error("Must 'dockerdo build' first")
+        return 1
+
+    if session.docker_registry is not None:
+        run_local_command(f"docker push {session.image_tag}", cwd=cwd)
+    elif session.remote_host is not None:
+        run_docker_save_pipe(session.image_tag, cwd=cwd)
+        # FIXME: copy the file
+        run_remote_command(f"pigz -d {session.name}.tar.gz | docker load", session)
+    else:
+        prettyprint.warning("No docker registry or remote host configured. Not pushing image.")
         return 1
     return 0
 

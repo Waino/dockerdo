@@ -48,7 +48,7 @@ class Session(BaseModel):
     remote_host: Optional[str] = None
     distro: str
     base_image: str
-    name_tag: Optional[str] = None
+    image_tag: Optional[str] = None
     container_username: str = "root"
     docker_registry: Optional[str] = None
     record_inotify: bool = False
@@ -72,7 +72,13 @@ class Session(BaseModel):
         record_inotify: bool,
         remote_host_build_dir: Path,
         user_config: UserConfig,
-    ) -> "Session":
+    ) -> Optional["Session"]:
+        """
+        Create a Session from command line options.
+        This is only used in the dockerdo init command: otherwise, the session is loaded from a yaml file.
+
+        Creates the session directory.
+        """
         if session_name is None:
             session_dir = Path(mkdtemp(prefix="dockerdo_"))
             prettyprint.action("Created", "ephemeral session directory {session_dir}")
@@ -80,8 +86,11 @@ class Session(BaseModel):
         else:
             session_dir = Path(f"~/.local/share/dockerdo/{session_name}").expanduser()
             if session_dir.exists():
-                # FIXME: reactivate or overwrite?
-                prettyprint.warning(f"Session directory {session_dir} already exists")
+                prettyprint.warning(
+                    f"Session directory {session_dir} already exists. "
+                    "Either reactivate using [bold cyan]source {session_dir}/activate[/bold cyan], or delete it."
+                )
+                return None
         if container_name is None:
             container_name = ephemeral_container_name()
         distro = distro if distro is not None else user_config.default_distro
