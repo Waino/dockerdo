@@ -5,7 +5,7 @@ import importlib.resources
 import os
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from dockerdo import prettyprint
 from dockerdo.config import UserConfig, Session
@@ -47,9 +47,7 @@ def cli() -> None:
     pass
 
 
-# @click.argument('vararg', type=str, nargs=-1)
-# @click.option('--enum', type=click.Choice(choices))
-@click.option("--no_bashrc", is_flag=True, help="Do not modify ~/.bashrc")
+@click.option("--no-bashrc", is_flag=True, help="Do not modify ~/.bashrc")
 @cli.command()
 def install(no_bashrc: bool) -> int:
     """Install dockerdo"""
@@ -180,6 +178,7 @@ def build(remote) -> int:
     session = load_session()
     if session is None:
         return 1
+    user_config = load_user_config()
 
     cwd = Path(os.getcwd())
     dockerfile = cwd / "Dockerfile.dockerdo"
@@ -190,16 +189,25 @@ def build(remote) -> int:
         session.base_image,
         session.name,
     )
+
+    # Read SSH key content
+    # This approach avoids the limitation of Docker build context
+    # while still securely injecting the SSH key into the image during build time
+    with open(user_config.ssh_key_path, "r") as f:
+        ssh_key = f.read().strip()
+
+    build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_KEY='{ssh_key}'-f {dockerfile} ."
     if remote:
         run_remote_command(
-            f"docker build -t {session.image_tag} -f {dockerfile} .", session
+            build_cmd,
+            session,
         )
         prettyprint.action(
             "Built", f"image {session.image_tag} on remote host {session.remote_host}"
         )
     else:
         run_local_command(
-            f"docker build -t {session.image_tag} -f {dockerfile} .",
+            build_cmd,
             cwd=cwd,
         )
         prettyprint.action("Built", f"image {session.image_tag} locally")
@@ -239,11 +247,34 @@ def push() -> int:
 
 
 @cli.command()
-def run() -> int:
+@click.argument("docker_run_args", type=str, nargs=-1)
+@click.option(
+    "--no-default-args",
+    is_flag=True,
+    help="Do not add default arguments from user config",
+)
+def run(docker_run_args: List[str]) -> int:
     """Start the container"""
     session = load_session()
     if session is None:
         return 1
+    if session.image_tag is None:
+        prettyprint.error("Must 'dockerdo build' first")
+        return 1
+    if session.docker_run_args is not None:
+        docker_run_args = session.docker_run_args.split() + docker_run_args
+    docker_run_args_str = " ".join(docker_run_args)
+
+    if session.remote_host is None:
+        run_local_command(
+            f"docker run -d {docker_run_args_str} --name {session.container_name} {session.image_tag}",
+            cwd=session.local_work_dir,
+        )
+    else:
+        run_remote_command(
+            f"docker run -d {docker_run_args_str} --name {session.container_name} {session.image_tag}",
+            session,
+        )
     return 0
 
 

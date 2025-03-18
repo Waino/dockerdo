@@ -31,6 +31,7 @@ class UserConfig(BaseModel):
     default_distro: str = "ubuntu"
     default_image: str = "ubuntu:latest"
     default_docker_registry: Optional[str] = None
+    default_docker_run_args: str = ""
     always_record_inotify: bool = False
     ssh_key_path: Path = Path("~/.ssh/id_rsa.pub").expanduser()
 
@@ -56,6 +57,8 @@ class Session(BaseModel):
     session_dir: Path
     remote_host_build_dir: Path
     local_work_dir: Path
+    docker_run_args: Optional[str] = None
+
     modified_files: Set[Path] = set()
     container_state: Literal["nothing", "created", "running", "stopped"] = "nothing"
 

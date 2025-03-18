@@ -3,27 +3,29 @@
 from pathlib import Path
 
 UBUNTU_DOCKERFILE = r"""
-FROM {image}
+FROM {image} as base
 
+ARG SSH_KEY
 RUN apt-get update && apt-get install -y openssh-server \
     && mkdir -p /var/run/sshd \
     && mkdir -p {homedir}/.ssh \
-    && chmod 700 {homedir}/.ssh
-COPY {ssh_key_path} {homedir}/.ssh/authorized_keys
-RUN chmod 600 {homedir}/.ssh/authorized_keys
+    && chmod 700 {homedir}/.ssh \
+    && echo "$SSH_KEY" > {homedir}/.ssh/authorized_keys \
+    && chmod 600 {homedir}/.ssh/authorized_keys
 
 CMD ["/usr/sbin/sshd", "-D", "&&", "sleep", "infinity"]
 """.strip()
 
 ALPINE_DOCKERFILE = r"""
-FROM {image}
+FROM {image} as base
 
+ARG SSH_KEY
 RUN apk add openssh-server \
     && mkdir -p /var/run/sshd \
     && mkdir -p {homedir}/.ssh \
-    && chmod 700 {homedir}/.ssh
-COPY {ssh_key_path} {homedir}/.ssh/authorized_keys
-RUN chmod 600 {homedir}/.ssh/authorized_keys
+    && chmod 700 {homedir}/.ssh \
+    && echo "$SSH_KEY" > {homedir}/.ssh/authorized_keys \
+    && chmod 600 {homedir}/.ssh/authorized_keys
 
 CMD ["/usr/sbin/sshd", "-D", "&&", "sleep", "infinity"]
 """.strip()
