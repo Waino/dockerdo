@@ -11,7 +11,6 @@ from dockerdo import prettyprint
 from dockerdo.config import UserConfig, Session
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
-    get_sshfs_remote_dir,
     get_user_config_dir,
     run_docker_save_pipe,
     run_local_command,
@@ -231,12 +230,12 @@ def push() -> int:
             f"docker push {session.image_tag}", cwd=session.local_work_dir
         )
     elif session.remote_host is not None:
-        sshfs_remote_dir = get_sshfs_remote_dir(session)
-        assert sshfs_remote_dir is not None
+        sshfs_remote_mount_point = session.sshfs_remote_mount_point
+        assert sshfs_remote_mount_point is not None
         run_docker_save_pipe(
             session.image_tag,
             local_work_dir=session.local_work_dir,
-            sshfs_remote_dir=sshfs_remote_dir,
+            sshfs_remote_mount_point=sshfs_remote_mount_point,
         )
         remote_path = session.remote_host_build_dir / f"{session.name}.tar.gz"
         run_remote_command(f"pigz -d {remote_path} | docker load", session)

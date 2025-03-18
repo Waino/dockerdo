@@ -29,13 +29,6 @@ def get_container_work_dir(session: Session) -> Optional[Path]:
         return None
 
 
-def get_sshfs_remote_dir(session: Session) -> Optional[Path]:
-    """Get the path on the local host where the remote host filesystem is mounted"""
-    if session.remote_host is None:
-        return None
-    return session.local_work_dir / session.remote_host
-
-
 def run_local_command(command: str, cwd: Path) -> int:
     """
     Run a command on the local host, piping through stdin, stdout, and stderr.
@@ -88,14 +81,14 @@ def run_container_command(command: str, session: Session) -> int:
 
 
 def run_docker_save_pipe(
-    image_tag: str, local_work_dir: Path, sshfs_remote_dir: Path
+    image_tag: str, local_work_dir: Path, sshfs_remote_mount_point: Path
 ) -> int:
     """Run docker save, piping the output via pigz to compress it, and finally into a file"""
     try:
         args = shlex.split(f"docker save {image_tag}")
         with Popen(args, stdout=PIPE, cwd=local_work_dir) as docker:
             output = check_output(("pigz"), stdin=docker.stdout)
-            with open(sshfs_remote_dir / f"{image_tag}.tar.gz", "wb") as fout:
+            with open(sshfs_remote_mount_point / f"{image_tag}.tar.gz", "wb") as fout:
                 fout.write(output)
     except CalledProcessError as e:
         prettyprint.error(f"Error running docker save: {e}")

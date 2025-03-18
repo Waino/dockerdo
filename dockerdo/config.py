@@ -177,11 +177,44 @@ class Session(BaseModel):
         with open(session_file, "r") as f:
             return cls(**yaml.safe_load(f.read()))
 
+    @property
+    def sshfs_remote_mount_point(self) -> Optional[Path]:
+        """Get the path on the local host where the remote host build dir is mounted"""
+        if self.remote_host is None:
+            return None
+        return self.local_work_dir / self.remote_host
+
+    @property
+    def sshfs_container_mount_point(self) -> Path:
+        """Get the path on the local host where the container filesystem is mounted"""
+        return self.local_work_dir / "container"
+
     def write_activate_script(self) -> Path:
         """Write the activate script to a file in the session directory"""
         activate_script = self.session_dir / "activate"
         with open(activate_script, "w") as f:
             f.write(f"export DOCKERDO_SESSION_DIR={self.session_dir}\n")
             f.write(f"export DOCKERDO_SESSION_NAME={self.name}\n")
+
+        # Mount remote host build directory if using remote host
+        if self.remote_host is not None:
+            f.write(f"mkdir -p {self.sshfs_remote_mount_point}\n")
+            f.write(
+                f"sshfs {self.remote_host}:{self.remote_host_build_dir} {self.sshfs_remote_mount_point}\n"
+            )
+
+        # Mount container filesystem
+        f.write(f"mkdir -p {self.sshfs_container_mount_point}\n")
+        if self.remote_host is None:
+            # Direct mount when Docker runs locally
+            f.write(
+                f"sshfs {self.container_name}:/ {self.sshfs_container_mount_point}\n"
+            )
+        else:
+            # Mount via SSH jump host when Docker runs remotely
+            f.write(
+                f"sshfs -o ProxyJump={self.remote_host} {self.container_name}:/ {self.sshfs_container_mount_point}\n"
+            )
+
         activate_script.chmod(0o755)
         return activate_script
