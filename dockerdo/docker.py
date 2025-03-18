@@ -2,25 +2,11 @@
 
 from pathlib import Path
 
-UBUNTU_DOCKERFILE = r"""
+GENERIC_DOCKERFILE = r"""
 FROM {image} as base
 
 ARG SSH_KEY
-RUN apt-get update && apt-get install -y openssh-server \
-    && mkdir -p /var/run/sshd \
-    && mkdir -p {homedir}/.ssh \
-    && chmod 700 {homedir}/.ssh \
-    && echo "$SSH_KEY" > {homedir}/.ssh/authorized_keys \
-    && chmod 600 {homedir}/.ssh/authorized_keys
-
-CMD ["/usr/sbin/sshd", "-D", "&&", "sleep", "infinity"]
-""".strip()
-
-ALPINE_DOCKERFILE = r"""
-FROM {image} as base
-
-ARG SSH_KEY
-RUN apk add openssh-server \
+RUN {package_install} \
     && mkdir -p /var/run/sshd \
     && mkdir -p {homedir}/.ssh \
     && chmod 700 {homedir}/.ssh \
@@ -31,8 +17,14 @@ CMD ["/usr/sbin/sshd", "-D", "&&", "sleep", "infinity"]
 """.strip()
 
 DOCKERFILES = {
-    "ubuntu": UBUNTU_DOCKERFILE,
-    "alpine": ALPINE_DOCKERFILE,
+    "ubuntu": (
+        GENERIC_DOCKERFILE,
+        {"package_install": "apt-get update && apt-get install -y openssh-server"},
+    ),
+    "alpine": (
+        GENERIC_DOCKERFILE,
+        {"package_install": "apk add openssh-server"},
+    ),
 }
 DISTROS = list(DOCKERFILES.keys())
 
@@ -44,8 +36,10 @@ def format_dockerfile(
     ssh_key_path: Path,
 ) -> str:
     """Format a Dockerfile"""
-    return DOCKERFILES[distro].format(
+    dockerfile, kwargs = DOCKERFILES[distro]
+    return dockerfile.format(
         image=image,
         homedir=homedir,
         ssh_key_path=ssh_key_path,
+        **kwargs,
     )
