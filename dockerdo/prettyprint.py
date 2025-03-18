@@ -1,4 +1,5 @@
 """Functions to ensure a consistent look and feel for the output"""
+
 import rich
 import sys
 

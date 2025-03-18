@@ -11,7 +11,11 @@ from dockerdo import prettyprint
 from dockerdo.config import UserConfig, Session
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
-    get_user_config_dir, run_local_command, run_remote_command, run_docker_save_pipe, get_sshfs_remote_dir
+    get_sshfs_remote_dir,
+    get_user_config_dir,
+    run_docker_save_pipe,
+    run_local_command,
+    run_remote_command,
 )
 from dockerdo.utils import make_image_tag
 
@@ -29,14 +33,16 @@ def load_session() -> Optional[Session]:
     """Load a session"""
     session_dir = os.environ.get("DOCKERDO_SESSION_DIR")
     if session_dir is None:
-        prettyprint.error("$DOCKERDO_SESSION_DIR is not set. Did you source the activate script?")
+        prettyprint.error(
+            "$DOCKERDO_SESSION_DIR is not set. Did you source the activate script?"
+        )
         return None
     session = Session.load(Path(session_dir))
     return session
 
 
 # ## for subcommands
-@click.group(context_settings={'show_default': True})
+@click.group(context_settings={"show_default": True})
 def cli() -> None:
     pass
 
@@ -85,9 +91,13 @@ def install(no_bashrc: bool) -> int:
 @click.option("--local", is_flag=True, help="Remote host is the same as local host")
 @click.option("--distro", type=click.Choice(DISTROS), default=None)
 @click.option("--image", type=str, help="Docker image")
-@click.option("--user", "container_username", type=str, help="Container username", default="root")
+@click.option(
+    "--user", "container_username", type=str, help="Container username", default="root"
+)
 @click.option("--registry", type=str, help="Docker registry", default=None)
-@click.option("--build_dir", type=Path, help="Remote host build directory", default=Path("."))
+@click.option(
+    "--build_dir", type=Path, help="Remote host build directory", default=Path(".")
+)
 def init(
     record: bool,
     session_name: Optional[str],
@@ -149,7 +159,9 @@ def _overlay(distro: Optional[str], image: Optional[str]) -> int:
     )
     with open(dockerfile, "w") as f:
         f.write(dockerfile_content)
-    prettyprint.action("Overlayed", f"image {session.base_image} into Dockerfile.dockerdo")
+    prettyprint.action(
+        "Overlayed", f"image {session.base_image} into Dockerfile.dockerdo"
+    )
     return 0
 
 
@@ -179,8 +191,12 @@ def build(remote) -> int:
         session.name,
     )
     if remote:
-        run_remote_command(f"docker build -t {session.image_tag} -f {dockerfile} .", session)
-        prettyprint.action("Built", f"image {session.image_tag} on remote host {session.remote_host}")
+        run_remote_command(
+            f"docker build -t {session.image_tag} -f {dockerfile} .", session
+        )
+        prettyprint.action(
+            "Built", f"image {session.image_tag} on remote host {session.remote_host}"
+        )
     else:
         run_local_command(
             f"docker build -t {session.image_tag} -f {dockerfile} .",
@@ -201,7 +217,9 @@ def push() -> int:
         return 1
 
     if session.docker_registry is not None:
-        run_local_command(f"docker push {session.image_tag}", cwd=session.local_work_dir)
+        run_local_command(
+            f"docker push {session.image_tag}", cwd=session.local_work_dir
+        )
     elif session.remote_host is not None:
         sshfs_remote_dir = get_sshfs_remote_dir(session)
         assert sshfs_remote_dir is not None
@@ -213,7 +231,9 @@ def push() -> int:
         remote_path = session.remote_host_build_dir / f"{session.name}.tar.gz"
         run_remote_command(f"pigz -d {remote_path} | docker load", session)
     else:
-        prettyprint.warning("No docker registry or remote host configured. Not pushing image.")
+        prettyprint.warning(
+            "No docker registry or remote host configured. Not pushing image."
+        )
         return 1
     return 0
 

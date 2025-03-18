@@ -23,8 +23,8 @@ def make_image_tag(
     base_image: str,
     session_name: str,
 ) -> str:
-    if ':' in base_image:
-        base_image, base_image_tag = base_image.split(':')
+    if ":" in base_image:
+        base_image, base_image_tag = base_image.split(":")
     else:
         base_image_tag = "latest"
     image_tag = f"dockerdo-{base_image}:{base_image_tag}-{session_name}"

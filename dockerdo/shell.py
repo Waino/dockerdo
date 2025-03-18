@@ -42,10 +42,12 @@ def run_local_command(command: str, cwd: Path) -> int:
     The command may be potentially long-lived and both read and write large amounts of data.
     """
     args = shlex.split(command)
-    print(' '.join(args))     # Debugging
+    print(" ".join(args))  # Debugging
     return 0
     if False:
-        with Popen(args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, cwd=cwd) as process:
+        with Popen(
+            args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, cwd=cwd
+        ) as process:
             process.wait()
             return process.returncode
 
@@ -85,7 +87,9 @@ def run_container_command(command: str, session: Session) -> int:
     return run_local_command(wrapped_command, cwd=cwd)
 
 
-def run_docker_save_pipe(image_tag: str, local_work_dir: Path, sshfs_remote_dir: Path) -> int:
+def run_docker_save_pipe(
+    image_tag: str, local_work_dir: Path, sshfs_remote_dir: Path
+) -> int:
     """Run docker save, piping the output via pigz to compress it, and finally into a file"""
     try:
         args = shlex.split(f"docker save {image_tag}")

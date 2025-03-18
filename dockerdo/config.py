@@ -16,6 +16,7 @@ class BaseModel(PydanticBaseModel):
 
     class Config:
         """Pydantic config"""
+
         extra = "ignore"
 
     def model_dump_yaml(self) -> str:
@@ -99,8 +100,16 @@ class Session(BaseModel):
         if local:
             remote_host = None
         else:
-            remote_host = remote_host if remote_host is not None else user_config.default_remote_host
-        registry = docker_registry if docker_registry is not None else user_config.default_docker_registry
+            remote_host = (
+                remote_host
+                if remote_host is not None
+                else user_config.default_remote_host
+            )
+        registry = (
+            docker_registry
+            if docker_registry is not None
+            else user_config.default_docker_registry
+        )
         record_inotify = record_inotify or user_config.always_record_inotify
         session = Session(
             name=session_name,
@@ -119,7 +128,7 @@ class Session(BaseModel):
 
     def get_homedir(self) -> Path:
         """Get the home directory for the session"""
-        if self.container_username == 'root':
+        if self.container_username == "root":
             return Path("/root")
         else:
             return Path(f"/home/{self.container_username}")
@@ -150,7 +159,9 @@ class Session(BaseModel):
         session_file = self.session_dir / "session.yaml"
         if not self.session_dir.exists():
             self.session_dir.mkdir(parents=True, exist_ok=True)
-            prettyprint.action("Created", f"persistent session directory {self.session_dir}")
+            prettyprint.action(
+                "Created", f"persistent session directory {self.session_dir}"
+            )
         with open(session_file, "w") as f:
             f.write(self.model_dump_yaml())
 
