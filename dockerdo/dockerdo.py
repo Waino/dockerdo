@@ -3,6 +3,7 @@
 import click
 import importlib.resources
 import os
+import rich
 import sys
 from pathlib import Path
 from typing import Optional, List
@@ -15,6 +16,7 @@ from dockerdo.shell import (
     run_docker_save_pipe,
     run_local_command,
     run_remote_command,
+    run_container_command,
 )
 from dockerdo.utils import make_image_tag
 
@@ -30,7 +32,7 @@ def load_user_config() -> UserConfig:
 
 def load_session() -> Optional[Session]:
     """Load a session"""
-    session_dir = os.environ.get("DOCKERDO_SESSION_DIR")
+    session_dir = os.environ.get("DOCKERDO_SESSION_DIR", None)
     if session_dir is None:
         prettyprint.error(
             "$DOCKERDO_SESSION_DIR is not set. Did you source the activate script?"
@@ -197,7 +199,7 @@ def build(remote) -> int:
     with open(user_config.ssh_key_path, "r") as f:
         ssh_key = f.read().strip()
 
-    build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_KEY='{ssh_key}'-f {dockerfile} ."
+    build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile} ."
     if remote:
         run_remote_command(
             build_cmd,
@@ -212,6 +214,7 @@ def build(remote) -> int:
             cwd=cwd,
         )
         prettyprint.action("local", "Built", f"image {session.image_tag}")
+    session.save()
     return 0
 
 
@@ -254,7 +257,8 @@ def push() -> int:
     is_flag=True,
     help="Do not add default arguments from user config",
 )
-def run(docker_run_args: List[str]) -> int:
+@click.option("--ssh_port_on_remote_host", type=int, help="container SSH port on remote host")
+def run(docker_run_args: List[str], no_default_args: bool, ssh_port_on_remote_host: Optional[int]) -> int:
     """Start the container"""
     session = load_session()
     if session is None:
@@ -262,38 +266,109 @@ def run(docker_run_args: List[str]) -> int:
     if session.image_tag is None:
         prettyprint.error("Must 'dockerdo build' first")
         return 1
-    if session.docker_run_args is not None:
+    if session.docker_run_args is not None and not no_default_args:
         docker_run_args = session.docker_run_args.split() + docker_run_args
     docker_run_args_str = " ".join(docker_run_args)
+    if ssh_port_on_remote_host is None:
+        ssh_port_on_remote_host = 2222
 
+    command = f"docker run -d {docker_run_args_str}" \
+              f" -p {ssh_port_on_remote_host}:22 " \
+              f" --name {session.container_name} {session.image_tag}"
     if session.remote_host is None:
-        run_local_command(
-            f"docker run -d {docker_run_args_str} --name {session.container_name} {session.image_tag}",
-            cwd=session.local_work_dir,
-        )
+        run_local_command(command, cwd=session.local_work_dir)
     else:
-        run_remote_command(
-            f"docker run -d {docker_run_args_str} --name {session.container_name} {session.image_tag}",
-            session,
-        )
+        run_remote_command(command, session)
+    session.container_state = "running"
+    session.save()
+    prettyprint.action("container", "Started", f"{session.container_name}")
     return 0
 
 
 @cli.command()
-def export() -> int:
+@click.argument("key_value", type=str, metavar="KEY=VALUE")
+def export(key_value: str) -> int:
     """Add an environment variable to the env list"""
+    try:
+        key, value = key_value.split("=")
+    except ValueError:
+        prettyprint.error("Invalid key=value format")
+        return 1
     session = load_session()
     if session is None:
         return 1
+    session.export(key, value)
+    session.save()
+    prettyprint.action("container", "Exported", f"{key}={value}")
     return 0
 
 
 @cli.command()
-def exec() -> int:
+@click.argument("args", type=str, nargs=-1)
+def exec(args) -> int:
     """Execute a command in the container"""
     session = load_session()
     if session is None:
         return 1
+    command = " ".join(args)
+    run_container_command(command=command, session=session)
+    session.record_command(command)
+    return 0
+
+
+@cli.command()
+def status() -> int:
+    """Print the status of a session"""
+    user_config_path = get_user_config_dir() / "dockerdo.yaml"
+    if not user_config_path.exists():
+        prettyprint.warning(f"No user config found in {user_config_path}")
+    session_dir = os.environ.get("DOCKERDO_SESSION_DIR", None)
+    if session_dir is None:
+        prettyprint.info("No active session")
+        return 0
+    session = load_session()
+    assert session is not None
+
+    # Check existence of Dockerfile
+    dockerfile = session.local_work_dir / "Dockerfile.dockerdo"
+    if dockerfile.exists():
+        prettyprint.info(f"Dockerfile found in {dockerfile}")
+    else:
+        prettyprint.warning(f"No Dockerfile found in {dockerfile}")
+
+    # Check existence of image
+    if session.image_tag is not None:
+        command = f"docker images {session.image_tag}"
+        if session.remote_host is None:
+            run_local_command(command, cwd=session.local_work_dir)
+        else:
+            run_remote_command(command, session)
+
+    # Check status of container
+    if session.container_state == "running":
+        command = f"docker ps -a --filter name={session.container_name}"
+        if session.remote_host is None:
+            run_local_command(command, cwd=session.local_work_dir)
+        else:
+            run_remote_command(command, session)
+
+    # Check status of mounts
+    sshfs_remote_mount_point = session.sshfs_remote_mount_point
+    if sshfs_remote_mount_point is not None:
+        if os.path.ismount(sshfs_remote_mount_point):
+            prettyprint.info(f"Remote host build directory mounted at {sshfs_remote_mount_point}")
+        else:
+            prettyprint.warning(f"Remote host build directory not mounted at {sshfs_remote_mount_point}")
+    sshfs_container_mount_point = session.sshfs_container_mount_point
+    if session.container_state == "running":
+        if os.path.ismount(sshfs_container_mount_point):
+            prettyprint.info(f"Container filesystem mounted at {sshfs_container_mount_point}")
+        else:
+            prettyprint.warning(f"Container filesystem not mounted at {sshfs_container_mount_point}")
+
+    prettyprint.container_status(session.container_state)
+    prettyprint.info("Session status:")
+    rich.print(session.model_dump_yaml(exclude={"modified_files", "container_state"}), file=sys.stderr)
     return 0
 
 
@@ -303,6 +378,14 @@ def stop() -> int:
     session = load_session()
     if session is None:
         return 1
+
+    command = f"docker stop {session.container_name}"
+    if session.remote_host is None:
+        run_local_command(command, cwd=session.local_work_dir)
+    else:
+        run_remote_command(command, session)
+    session.container_state = "stopped"
+    session.save()
     return 0
 
 
@@ -312,6 +395,15 @@ def history() -> int:
     session = load_session()
     if session is None:
         return 1
+
+    if session.record_inotify:
+        prettyprint.info("Modified files:")
+        for file in session.modified_files:
+            print(file)
+    else:
+        prettyprint.info("Recording of modified files is disabled")
+    prettyprint.info("Command history:")
+    print(session.get_command_history())
     return 0
 
 
@@ -321,6 +413,14 @@ def rm() -> int:
     session = load_session()
     if session is None:
         return 1
+
+    command = f"docker rm {session.container_name}"
+    if session.remote_host is None:
+        run_local_command(command, cwd=session.local_work_dir)
+    else:
+        run_remote_command(command, session)
+    session.container_state = "nothing"
+    session.save()
     return 0
 
 

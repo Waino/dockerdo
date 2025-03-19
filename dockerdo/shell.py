@@ -34,8 +34,8 @@ def run_local_command(command: str, cwd: Path) -> int:
     Run a command on the local host, piping through stdin, stdout, and stderr.
     The command may be potentially long-lived and both read and write large amounts of data.
     """
+    print(command)  # Debugging
     args = shlex.split(command)
-    print(" ".join(args))  # Debugging
     return 0
     if False:
         with Popen(

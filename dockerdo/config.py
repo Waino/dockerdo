@@ -19,9 +19,9 @@ class BaseModel(PydanticBaseModel):
 
         extra = "ignore"
 
-    def model_dump_yaml(self) -> str:
+    def model_dump_yaml(self, exclude: Optional[set[str]] = None) -> str:
         """Dump the model as yaml"""
-        return yaml.dump(self.model_dump(mode="json"), sort_keys=True)
+        return yaml.dump(self.model_dump(mode="json", exclude=exclude), sort_keys=True)
 
 
 class UserConfig(BaseModel):
@@ -189,32 +189,36 @@ class Session(BaseModel):
         """Get the path on the local host where the container filesystem is mounted"""
         return self.local_work_dir / "container"
 
+    def format_activate_script(self) -> str:
+        """Generate the activate script"""
+        result = []
+        # let the user know what is happening
+        result.append("set -x\n")
+        result.append(f"export DOCKERDO_SESSION_DIR={self.session_dir}\n")
+        result.append(f"export DOCKERDO_SESSION_NAME={self.name}\n")
+
+        # Mount remote host build directory if using remote host
+        if self.remote_host is not None:
+            result.append(f"mkdir -p {self.sshfs_remote_mount_point}\n")
+            result.append(
+                f"sshfs {self.remote_host}:{self.remote_host_build_dir} {self.sshfs_remote_mount_point}\n"
+            )
+        result.append("set +x\n")
+        return "".join(result)
+
     def write_activate_script(self) -> Path:
         """Write the activate script to a file in the session directory"""
         activate_script = self.session_dir / "activate"
         with open(activate_script, "w") as f:
-            f.write(f"export DOCKERDO_SESSION_DIR={self.session_dir}\n")
-            f.write(f"export DOCKERDO_SESSION_NAME={self.name}\n")
-
-        # Mount remote host build directory if using remote host
-        if self.remote_host is not None:
-            f.write(f"mkdir -p {self.sshfs_remote_mount_point}\n")
-            f.write(
-                f"sshfs {self.remote_host}:{self.remote_host_build_dir} {self.sshfs_remote_mount_point}\n"
-            )
-
-        # Mount container filesystem
-        f.write(f"mkdir -p {self.sshfs_container_mount_point}\n")
-        if self.remote_host is None:
-            # Direct mount when Docker runs locally
-            f.write(
-                f"sshfs {self.container_name}:/ {self.sshfs_container_mount_point}\n"
-            )
-        else:
-            # Mount via SSH jump host when Docker runs remotely
-            f.write(
-                f"sshfs -o ProxyJump={self.remote_host} {self.container_name}:/ {self.sshfs_container_mount_point}\n"
-            )
+            f.write(self.format_activate_script())
 
         activate_script.chmod(0o755)
         return activate_script
+
+    def get_command_history(self) -> str:
+        """Get the command history"""
+        history_file = self.session_dir / "command_history"
+        if not history_file.exists():
+            return ""
+        with open(history_file, "r") as f:
+            return f.read()

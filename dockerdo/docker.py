@@ -3,17 +3,20 @@
 from pathlib import Path
 
 GENERIC_DOCKERFILE = r"""
-FROM {image} as base
+# syntax=docker/dockerfile:1
+# check=skip=SecretsUsedInArgOrEnv
+# We *do* want to bake the ssh public key into the image
+FROM {image} AS base
 
-ARG SSH_KEY
+ARG SSH_PUB_KEY
 RUN {package_install} \
     && mkdir -p /var/run/sshd \
     && mkdir -p {homedir}/.ssh \
     && chmod 700 {homedir}/.ssh \
-    && echo "$SSH_KEY" > {homedir}/.ssh/authorized_keys \
+    && echo "$SSH_PUB_KEY" > {homedir}/.ssh/authorized_keys \
     && chmod 600 {homedir}/.ssh/authorized_keys
 
-CMD ["/usr/sbin/sshd", "-D", "&&", "sleep", "infinity"]
+CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D && sleep infinity"]
 """.strip()
 
 DOCKERFILES = {

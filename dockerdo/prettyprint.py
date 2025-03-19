@@ -25,9 +25,25 @@ def action(host: Host, verb: str, text: str) -> None:
     )
 
 
+def info(text: str) -> None:
+    rich.print(f"[bold blue](#)[/bold blue] [bold]{text}[/bold]", file=sys.stderr)
+
+
 def warning(text: str) -> None:
     rich.print(f"[bold yellow](!)[/bold yellow] [bold]{text}[/bold]", file=sys.stderr)
 
 
 def error(text: str) -> None:
     rich.print(f"[bold red](!)[/bold red] [bold]{text}[/bold]", file=sys.stderr)
+
+
+def container_status(status: str) -> None:
+    if status == "created":
+        color = "blue"
+    if status == "running":
+        color = "green"
+    elif status == "stopped":
+        color = "yellow"
+    else:
+        color = "red"
+    info(f"Container status: [bold {color}]{status}[/bold {color}]")
