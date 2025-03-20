@@ -5,6 +5,7 @@ import importlib.resources
 import os
 import rich
 import sys
+import time
 from pathlib import Path
 from typing import Optional, List
 
@@ -257,8 +258,14 @@ def push() -> int:
     is_flag=True,
     help="Do not add default arguments from user config",
 )
-@click.option("--ssh_port_on_remote_host", type=int, help="container SSH port on remote host")
-def run(docker_run_args: List[str], no_default_args: bool, ssh_port_on_remote_host: Optional[int]) -> int:
+@click.option(
+    "--ssh_port_on_remote_host", type=int, help="container SSH port on remote host"
+)
+def run(
+    docker_run_args: List[str],
+    no_default_args: bool,
+    ssh_port_on_remote_host: Optional[int],
+) -> int:
     """Start the container"""
     session = load_session()
     if session is None:
@@ -266,15 +273,21 @@ def run(docker_run_args: List[str], no_default_args: bool, ssh_port_on_remote_ho
     if session.image_tag is None:
         prettyprint.error("Must 'dockerdo build' first")
         return 1
+    if session.container_state == "running":
+        prettyprint.error("Container is expected to be already running")
+        return 1
     if session.docker_run_args is not None and not no_default_args:
         docker_run_args = session.docker_run_args.split() + docker_run_args
     docker_run_args_str = " ".join(docker_run_args)
     if ssh_port_on_remote_host is None:
         ssh_port_on_remote_host = 2222
+    session.ssh_port_on_remote_host = ssh_port_on_remote_host
 
-    command = f"docker run -d {docker_run_args_str}" \
-              f" -p {ssh_port_on_remote_host}:22 " \
-              f" --name {session.container_name} {session.image_tag}"
+    command = (
+        f"docker run -d {docker_run_args_str}"
+        f" -p {ssh_port_on_remote_host}:22 "
+        f" --name {session.container_name} {session.image_tag}"
+    )
     if session.remote_host is None:
         run_local_command(command, cwd=session.local_work_dir)
     else:
@@ -282,6 +295,32 @@ def run(docker_run_args: List[str], no_default_args: bool, ssh_port_on_remote_ho
     session.container_state = "running"
     session.save()
     prettyprint.action("container", "Started", f"{session.container_name}")
+
+    remote_host = (
+        session.remote_host if session.remote_host is not None else "localhost"
+    )
+    with prettyprint.LongTask("Creating SSH socket") as task:
+        # sleep to wait for the container to start
+        time.sleep(2)
+        # FIXME: needs to run in the background
+        run_local_command(
+            f"ssh -M -N -S {session.session_dir}/ssh-socket -p {ssh_port_on_remote_host}"
+            f" {session.container_username}@{remote_host} -o StrictHostKeyChecking=no",
+            cwd=session.local_work_dir,
+        )
+        if os.path.exists(session.session_dir / "ssh-socket"):
+            task.set_status(task.OK)
+    with prettyprint.LongTask("Mounting container filesystem") as task:
+        os.makedirs(session.sshfs_container_mount_point, exist_ok=True)
+        run_local_command(
+            f"sshfs -p {ssh_port_on_remote_host}"
+            f" {session.container_username}@{remote_host}:/"
+            f" {session.sshfs_container_mount_point}",
+            cwd=session.local_work_dir,
+        )
+        if os.path.ismount(session.sshfs_container_mount_point):
+            task.set_status(task.OK)
+
     return 0
 
 
@@ -338,6 +377,7 @@ def status() -> int:
 
     # Check existence of image
     if session.image_tag is not None:
+        prettyprint.info(f"Docker images with tag: {session.image_tag}")
         command = f"docker images {session.image_tag}"
         if session.remote_host is None:
             run_local_command(command, cwd=session.local_work_dir)
@@ -346,6 +386,7 @@ def status() -> int:
 
     # Check status of container
     if session.container_state == "running":
+        prettyprint.info(f"Containers named {session.container_name}")
         command = f"docker ps -a --filter name={session.container_name}"
         if session.remote_host is None:
             run_local_command(command, cwd=session.local_work_dir)
@@ -356,19 +397,39 @@ def status() -> int:
     sshfs_remote_mount_point = session.sshfs_remote_mount_point
     if sshfs_remote_mount_point is not None:
         if os.path.ismount(sshfs_remote_mount_point):
-            prettyprint.info(f"Remote host build directory mounted at {sshfs_remote_mount_point}")
+            prettyprint.info(
+                f"Remote host build directory mounted at {sshfs_remote_mount_point}"
+            )
         else:
-            prettyprint.warning(f"Remote host build directory not mounted at {sshfs_remote_mount_point}")
+            prettyprint.warning(
+                f"Remote host build directory not mounted at {sshfs_remote_mount_point}"
+            )
     sshfs_container_mount_point = session.sshfs_container_mount_point
     if session.container_state == "running":
         if os.path.ismount(sshfs_container_mount_point):
-            prettyprint.info(f"Container filesystem mounted at {sshfs_container_mount_point}")
+            prettyprint.info(
+                f"Container filesystem mounted at {sshfs_container_mount_point}"
+            )
         else:
-            prettyprint.warning(f"Container filesystem not mounted at {sshfs_container_mount_point}")
+            prettyprint.warning(
+                f"Container filesystem not mounted at {sshfs_container_mount_point}"
+            )
+
+    # Check status of SSH socket
+    if session.container_state == "running":
+        if os.path.exists(session.session_dir / "ssh-socket"):
+            prettyprint.info(f"SSH socket found at {session.session_dir}/ssh-socket")
+        else:
+            prettyprint.warning(
+                f"SSH socket not found at {session.session_dir}/ssh-socket"
+            )
 
     prettyprint.container_status(session.container_state)
     prettyprint.info("Session status:")
-    rich.print(session.model_dump_yaml(exclude={"modified_files", "container_state"}), file=sys.stderr)
+    rich.print(
+        session.model_dump_yaml(exclude={"modified_files", "container_state"}),
+        file=sys.stderr,
+    )
     return 0
 
 

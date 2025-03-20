@@ -55,6 +55,7 @@ class Session(BaseModel):
     docker_registry: Optional[str] = None
     record_inotify: bool = False
     session_dir: Path
+    ssh_port_on_remote_host: Optional[int] = None
     remote_host_build_dir: Path
     local_work_dir: Path
     docker_run_args: Optional[str] = None
@@ -87,7 +88,7 @@ class Session(BaseModel):
         if session_name is None:
             session_dir = Path(mkdtemp(prefix="dockerdo_"))
             prettyprint.action(
-                "local", "Created", "ephemeral session directory {session_dir}"
+                "local", "Created", f"ephemeral session directory {session_dir}"
             )
             session_name = session_dir.name.replace("dockerdo_", "")
         else:

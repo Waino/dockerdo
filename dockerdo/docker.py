@@ -9,8 +9,8 @@ GENERIC_DOCKERFILE = r"""
 FROM {image} AS base
 
 ARG SSH_PUB_KEY
-RUN {package_install} \
-    && mkdir -p /var/run/sshd \
+RUN {package_install}
+RUN mkdir -p /var/run/sshd \
     && mkdir -p {homedir}/.ssh \
     && chmod 700 {homedir}/.ssh \
     && echo "$SSH_PUB_KEY" > {homedir}/.ssh/authorized_keys \
@@ -22,7 +22,9 @@ CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D && sleep infinity"]
 DOCKERFILES = {
     "ubuntu": (
         GENERIC_DOCKERFILE,
-        {"package_install": "apt-get update && apt-get install -y openssh-server"},
+        {
+            "package_install": "apt-get update && apt-get install -y openssh-server && rm -rf /var/lib/apt/lists/*"
+        },
     ),
     "alpine": (
         GENERIC_DOCKERFILE,

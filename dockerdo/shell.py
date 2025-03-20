@@ -19,12 +19,14 @@ def get_user_config_dir() -> Path:
 def get_container_work_dir(session: Session) -> Optional[Path]:
     """
     Get the container work directory.
-    Remove the prefix corresponding to the local work directory from the current working directory.
+    Remove the prefix corresponding to the sshfs_container_mount_point from the current working directory.
     If the current working directory is not inside the local work directory, return None.
     """
     current_work_dir = Path(os.getcwd())
-    if current_work_dir.is_relative_to(session.local_work_dir):
-        return current_work_dir.relative_to(session.local_work_dir)
+    if current_work_dir.is_relative_to(session.sshfs_container_mount_point):
+        return Path("/") / current_work_dir.relative_to(
+            session.sshfs_container_mount_point
+        )
     else:
         return None
 
@@ -63,18 +65,27 @@ def run_container_command(command: str, session: Session) -> int:
     Run a command on the container, piping through stdin, stdout, and stderr.
     """
     container_work_dir = get_container_work_dir(session)
+    if not container_work_dir:
+        prettyprint.error(
+            f"Current working directory is not inside the container mount point {session.sshfs_container_mount_point}"
+        )
+        return 1
+    escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
     if session.remote_host is None:
         # remote_host is the same as local_host
         wrapped_command = (
             f"ssh -S {session.session_dir}/ssh-socket"
-            f" {session.container_name}"
-            f' "cd {container_work_dir} && {shlex.quote(command)}"'
+            f" -p {session.ssh_port_on_remote_host} {session.container_username}@localhost"
+            " -o StrictHostKeyChecking=no"
+            f' "cd {container_work_dir} && {escaped_command}"'
         )
     else:
         wrapped_command = (
             f"ssh -S {session.session_dir}/ssh-socket"
-            f" -J {session.remote_host} {session.container_name}"
-            f' "cd {container_work_dir} && {shlex.quote(command)}"'
+            f" -J {session.remote_host} -p {session.ssh_port_on_remote_host}"
+            f" {session.container_username}@{session.remote_host}"
+            " -o StrictHostKeyChecking=no"
+            f' "cd {container_work_dir} && {escaped_command}"'
         )
     cwd = Path(os.getcwd())
     return run_local_command(wrapped_command, cwd=cwd)
