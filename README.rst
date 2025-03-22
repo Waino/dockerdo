@@ -88,8 +88,6 @@ dockerdo init
 * Initializes a new session.
 * Defines the work dir `${WORK_DIR}` on the local host.
 * Mounts the remote host build directory using `sshfs` into `${WORK_DIR}/${REMOTE_HOST}`.
-* To record filesystem events, use `dockerdo init --record &`.
-  The command will continue running in the background to record events using inotify.
 * To activate the session in the current shell, use `source $(dockerdo init)`.
   Later, you can use `source ./local/share/dockerdo/${session_name}/activate` to reactivate a persistent session.
 
@@ -123,6 +121,8 @@ dockerdo run
 * Starts the container on the remote host.
 * Mounts the container filesystem using `sshfs` into `${WORK_DIR}/container`.
 * Accepts the arguments for `docker run`.
+* To record filesystem events, use `dockerdo run --record &`.
+  The command will continue running in the background to record events using inotify.
 
 dockerdo export
 ^^^^^^^^^^^^^^^

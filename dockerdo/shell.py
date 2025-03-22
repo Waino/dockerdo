@@ -152,3 +152,14 @@ def verify_container_state(session: Session) -> bool:
     except json.JSONDecodeError as e:
         prettyprint.error(f"Error decoding docker ps output: {e}")
         return False
+
+
+def run_ssh_master_process(session: Session, remote_host: str, ssh_port_on_remote_host: int) -> Popen:
+    """Runs an ssh command with the -M option to create a master connection. This will run indefinitely."""
+    command = (
+        f"ssh -M -N -S {session.session_dir}/ssh-socket -p {ssh_port_on_remote_host}"
+        f" {session.container_username}@{remote_host} -o StrictHostKeyChecking=no"
+    )
+    return Popen(
+        shlex.split(command), stdin=None, stdout=None, stderr=None, cwd=session.local_work_dir
+    )

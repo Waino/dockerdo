@@ -19,6 +19,7 @@ from dockerdo.shell import (
     run_remote_command,
     run_container_command,
     verify_container_state,
+    run_ssh_master_process,
 )
 from dockerdo.utils import make_image_tag
 
@@ -292,10 +293,12 @@ def push() -> int:
 @click.option(
     "--ssh_port_on_remote_host", type=int, help="container SSH port on remote host"
 )
+@click.option("--record", is_flag=True, help="Record filesystem events")
 def run(
     docker_run_args: List[str],
     no_default_args: bool,
     ssh_port_on_remote_host: Optional[int],
+    record: bool,
 ) -> int:
     """Start the container"""
     session = load_session()
@@ -311,6 +314,7 @@ def run(
         docker_run_args = session.docker_run_args.split() + docker_run_args
     docker_run_args_str = " ".join(docker_run_args)
     if ssh_port_on_remote_host is None:
+        # TODO: detect a free port
         ssh_port_on_remote_host = 2222
     session.ssh_port_on_remote_host = ssh_port_on_remote_host
 
@@ -344,11 +348,10 @@ def run(
     ) as task:
         # sleep to wait for the container to start
         time.sleep(2)
-        # FIXME: needs to run in the background
-        run_local_command(
-            f"ssh -M -N -S {session.session_dir}/ssh-socket -p {ssh_port_on_remote_host}"
-            f" {session.container_username}@{remote_host} -o StrictHostKeyChecking=no",
-            cwd=session.local_work_dir,
+        ssh_master_process = run_ssh_master_process(
+            session=session,
+            remote_host=remote_host,
+            ssh_port_on_remote_host=ssh_port_on_remote_host
         )
         if os.path.exists(session.session_dir / "ssh-socket"):
             task.set_status(task.OK)
@@ -368,6 +371,18 @@ def run(
         if os.path.ismount(session.sshfs_container_mount_point):
             task.set_status(task.OK)
 
+    session.record_inotify = session.record_inotify or record
+    session.save()
+
+    if session.record_inotify:
+        import dockerdo.inotify
+
+        inotify_listener = dockerdo.inotify.InotifyListener(session)
+        inotify_listener.register_listeners()
+        prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
+        inotify_listener.listen()
+
+    ssh_master_process.wait()
     return 0
 
 
