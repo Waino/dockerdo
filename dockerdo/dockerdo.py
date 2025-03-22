@@ -18,6 +18,7 @@ from dockerdo.shell import (
     run_local_command,
     run_remote_command,
     run_container_command,
+    verify_container_state,
 )
 from dockerdo.utils import make_image_tag
 
@@ -385,6 +386,7 @@ def status() -> int:
             run_remote_command(command, session)
 
     # Check status of container
+    verify_container_state(session)
     if session.container_state == "running":
         prettyprint.info(f"Containers named {session.container_name}")
         command = f"docker ps -a --filter name={session.container_name}"
@@ -430,6 +432,7 @@ def status() -> int:
         session.model_dump_yaml(exclude={"modified_files", "container_state"}),
         file=sys.stderr,
     )
+    session.save()
     return 0
 
 

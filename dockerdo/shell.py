@@ -1,5 +1,6 @@
 """Shell related functions"""
 
+import json
 import os
 import shlex
 import sys
@@ -47,15 +48,23 @@ def run_local_command(command: str, cwd: Path) -> int:
             return process.returncode
 
 
-def run_remote_command(command: str, session: Session) -> int:
+def make_remote_command(command: str, session: Session) -> str:
     """
-    Run a command on the remote host, piping through stdin, stdout, and stderr.
+    Wrap a command in ssh to run on the remote host.
     """
     wrapped_command = (
         f"ssh -S {session.session_dir}/ssh-socket"
         f" {session.remote_host}"
         f' "cd {session.remote_host_build_dir} && {shlex.quote(command)}"'
     )
+    return wrapped_command
+
+
+def run_remote_command(command: str, session: Session) -> int:
+    """
+    Run a command on the remote host, piping through stdin, stdout, and stderr.
+    """
+    wrapped_command = make_remote_command(command, session)
     cwd = Path(os.getcwd())
     return run_local_command(wrapped_command, cwd=cwd)
 
@@ -105,3 +114,41 @@ def run_docker_save_pipe(
         prettyprint.error(f"Error running docker save: {e}")
         return e.returncode
     return 0
+
+
+def verify_container_state(session: Session) -> bool:
+    """
+    Verify the container state.
+
+    Updates the Session object, and returns True if the container is running.
+    Prints a warning if the container state is unexpected.
+    """
+    command = f"docker ps -a --filter name={session.container_name} --format json"
+    if session.remote_host is not None:
+        command = make_remote_command(command, session)
+    try:
+        output = check_output(shlex.split(command), cwd=session.local_work_dir)
+        response_dict = json.loads(output)
+        if response_dict["State"] == "running":
+            # "running" is the only state that is acceptable when expected "running"
+            if session.container_state != "running":
+                prettyprint.warning(f"Expected container state {session.container_state}, but container is running")
+            session.container_state = "running"
+            return True
+        elif response_dict["State"] in {"exited", "paused", "dead", "restarting", "created"}:
+            # states considered acceptable when expected "stopped"
+            if session.container_state != "stopped":
+                prettyprint.warning(
+                    f"Expected container state {session.container_state}, but container is {response_dict['State']}"
+                )
+            session.container_state = "stopped"
+            return False
+        else:
+            prettyprint.error(f"Unexpected container state: {response_dict['State']}")
+            return False
+    except CalledProcessError as e:
+        prettyprint.error(f"Error running docker ps: {e}")
+        return False
+    except json.JSONDecodeError as e:
+        prettyprint.error(f"Error decoding docker ps output: {e}")
+        return False

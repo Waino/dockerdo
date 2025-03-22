@@ -61,7 +61,7 @@ class Session(BaseModel):
     docker_run_args: Optional[str] = None
 
     modified_files: Set[Path] = set()
-    container_state: Literal["nothing", "created", "running", "stopped"] = "nothing"
+    container_state: Literal["nothing", "running", "stopped"] = "nothing"
 
     @classmethod
     def from_opts(

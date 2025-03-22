@@ -43,15 +43,13 @@ def error(text: str) -> None:
 
 
 def container_status(status: str) -> None:
-    if status == "created":
-        color = "blue"
     if status == "running":
         color = "green"
     elif status == "stopped":
         color = "yellow"
     else:
         color = "red"
-    info(f"Expected container status: [bold {color}]{status}[/bold {color}]")
+    info(f"Container status: [bold {color}]{status}[/bold {color}]")
 
 
 class LongTaskStatus(Enum):
