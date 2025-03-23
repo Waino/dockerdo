@@ -13,6 +13,7 @@ from dockerdo import prettyprint
 from dockerdo.config import UserConfig, Session
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
+    set_execution_mode,
     get_user_config_dir,
     run_docker_save_pipe,
     run_local_command,
@@ -52,9 +53,12 @@ def cli() -> None:
 
 
 @click.option("--no-bashrc", is_flag=True, help="Do not modify ~/.bashrc")
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 @cli.command()
-def install(no_bashrc: bool) -> int:
+def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
     """Install dockerdo"""
+    set_execution_mode(verbose, dry_run)
     # Create the user config file
     user_config_dir = get_user_config_dir()
     user_config_dir.mkdir(parents=True, exist_ok=True)
@@ -118,6 +122,8 @@ def install(no_bashrc: bool) -> int:
 @click.option(
     "--build_dir", type=Path, help="Remote host build directory", default=Path(".")
 )
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def init(
     record: bool,
     session_name: Optional[str],
@@ -129,12 +135,15 @@ def init(
     container_username: str,
     registry: Optional[str],
     build_dir: Path,
+    verbose: bool,
+    dry_run: bool,
 ) -> int:
     """
     Initialize a dockerdo session.
 
     SESSION_NAME is optional. If not given, an ephemeral session is created.
     """
+    set_execution_mode(verbose, dry_run)
     user_config = load_user_config()
     cwd = Path(os.getcwd())
     session = Session.from_opts(
@@ -192,15 +201,21 @@ def _overlay(distro: Optional[str], image: Optional[str]) -> int:
 @cli.command()
 @click.option("--distro", type=click.Choice(DISTROS), default=None)
 @click.option("--image", type=str, help="Docker image", default=None)
-def overlay(distro: Optional[str], image: Optional[str]) -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def overlay(distro: Optional[str], image: Optional[str], verbose: bool, dry_run: bool) -> int:
     """Overlay a Dockerfile with the changes needed by dockerdo"""
+    set_execution_mode(verbose, dry_run)
     return _overlay(distro, image)
 
 
 @cli.command()
 @click.option("--remote", is_flag=True, help="Build on remote host")
-def build(remote) -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def build(remote: bool, verbose: bool, dry_run: bool) -> int:
     """Build a Docker image"""
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -252,8 +267,11 @@ def build(remote) -> int:
 
 
 @cli.command()
-def push() -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def push(verbose: bool, dry_run: bool) -> int:
     """Push a Docker image"""
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -294,13 +312,18 @@ def push() -> int:
     "--ssh_port_on_remote_host", type=int, help="container SSH port on remote host"
 )
 @click.option("--record", is_flag=True, help="Record filesystem events")
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def run(
     docker_run_args: List[str],
     no_default_args: bool,
     ssh_port_on_remote_host: Optional[int],
     record: bool,
+    verbose: bool,
+    dry_run: bool,
 ) -> int:
     """Start the container"""
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -382,14 +405,20 @@ def run(
         prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
         inotify_listener.listen()
 
-    ssh_master_process.wait()
+    if ssh_master_process is None:
+        return 1
+    else:
+        ssh_master_process.wait()
     return 0
 
 
 @cli.command()
 @click.argument("key_value", type=str, metavar="KEY=VALUE")
-def export(key_value: str) -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def export(key_value: str, verbose: bool, dry_run: bool) -> int:
     """Add an environment variable to the env list"""
+    set_execution_mode(verbose, dry_run)
     try:
         key, value = key_value.split("=")
     except ValueError:
@@ -406,8 +435,11 @@ def export(key_value: str) -> int:
 
 @cli.command()
 @click.argument("args", type=str, nargs=-1)
-def exec(args) -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def exec(args, verbose: bool, dry_run: bool) -> int:
     """Execute a command in the container"""
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -418,8 +450,11 @@ def exec(args) -> int:
 
 
 @cli.command()
-def status() -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def status(verbose: bool, dry_run: bool) -> int:
     """Print the status of a session"""
+    set_execution_mode(verbose, dry_run)
     user_config_path = get_user_config_dir() / "dockerdo.yaml"
     if not user_config_path.exists():
         prettyprint.warning(f"No user config found in {user_config_path}")
@@ -498,8 +533,11 @@ def status() -> int:
 
 
 @cli.command()
-def stop() -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def stop(verbose: bool, dry_run: bool) -> int:
     """Stop the container"""
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -522,8 +560,11 @@ def stop() -> int:
 
 
 @cli.command()
-def history() -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def history(verbose: bool, dry_run: bool) -> int:
     """Show the history of a container"""
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -540,8 +581,11 @@ def history() -> int:
 
 
 @cli.command()
-def rm() -> int:
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def rm(verbose: bool, dry_run: bool) -> int:
     """Remove a container"""
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1

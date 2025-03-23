@@ -11,6 +11,16 @@ from typing import Optional
 from dockerdo import prettyprint
 from dockerdo.config import Session
 
+verbose = False
+dry_run = False
+
+
+def set_execution_mode(verbose_mode: bool, dry_run_mode: bool) -> None:
+    """Set the execution mode"""
+    global verbose, dry_run
+    verbose = verbose_mode or dry_run_mode
+    dry_run = dry_run_mode
+
 
 def get_user_config_dir() -> Path:
     """Get the user config directory"""
@@ -37,15 +47,17 @@ def run_local_command(command: str, cwd: Path) -> int:
     Run a command on the local host, piping through stdin, stdout, and stderr.
     The command may be potentially long-lived and both read and write large amounts of data.
     """
-    print(command)  # Debugging
+    if verbose:
+        print(f"+ {command}", file=sys.stderr)
     args = shlex.split(command)
-    return 0
-    if False:
+    if not dry_run:
         with Popen(
             args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, cwd=cwd
         ) as process:
             process.wait()
             return process.returncode
+    else:
+        return 0
 
 
 def make_remote_command(command: str, session: Session) -> str:
@@ -105,11 +117,16 @@ def run_docker_save_pipe(
 ) -> int:
     """Run docker save, piping the output via pigz to compress it, and finally into a file"""
     try:
-        args = shlex.split(f"docker save {image_tag}")
-        with Popen(args, stdout=PIPE, cwd=local_work_dir) as docker:
-            output = check_output(("pigz"), stdin=docker.stdout)
-            with open(sshfs_remote_mount_point / f"{image_tag}.tar.gz", "wb") as fout:
-                fout.write(output)
+        command = f"docker save {image_tag}"
+        output_path = sshfs_remote_mount_point / f"{image_tag}.tar.gz"
+        if verbose:
+            print(f"+ {command} | pigz > {output_path}", file=sys.stderr)
+        args = shlex.split(command)
+        if not dry_run:
+            with Popen(args, stdout=PIPE, cwd=local_work_dir) as docker:
+                output = check_output(("pigz"), stdin=docker.stdout)
+                with open(output_path, "wb") as fout:
+                    fout.write(output)
     except CalledProcessError as e:
         prettyprint.error(f"Error running docker save: {e}")
         return e.returncode
@@ -126,6 +143,10 @@ def verify_container_state(session: Session) -> bool:
     command = f"docker ps -a --filter name={session.container_name} --format json"
     if session.remote_host is not None:
         command = make_remote_command(command, session)
+    if verbose:
+        print(f"+ {command}", file=sys.stderr)
+    if dry_run:
+        return session.container_state == "running"
     try:
         output = check_output(shlex.split(command), cwd=session.local_work_dir)
         response_dict = json.loads(output)
@@ -154,12 +175,21 @@ def verify_container_state(session: Session) -> bool:
         return False
 
 
-def run_ssh_master_process(session: Session, remote_host: str, ssh_port_on_remote_host: int) -> Popen:
+def run_ssh_master_process(session: Session, remote_host: str, ssh_port_on_remote_host: int) -> Optional[Popen]:
     """Runs an ssh command with the -M option to create a master connection. This will run indefinitely."""
     command = (
         f"ssh -M -N -S {session.session_dir}/ssh-socket -p {ssh_port_on_remote_host}"
         f" {session.container_username}@{remote_host} -o StrictHostKeyChecking=no"
     )
-    return Popen(
-        shlex.split(command), stdin=None, stdout=None, stderr=None, cwd=session.local_work_dir
-    )
+    if verbose:
+        print(f"+ {command}", file=sys.stderr)
+    if not dry_run:
+        try:
+            return Popen(
+                shlex.split(command), stdin=None, stdout=None, stderr=None, cwd=session.local_work_dir
+            )
+        except CalledProcessError as e:
+            prettyprint.error(f"Error running ssh master process: {e}")
+            return None
+    else:
+        return None
