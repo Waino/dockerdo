@@ -6,7 +6,9 @@ import os
 import rich
 import sys
 import time
+from contextlib import nullcontext, AbstractContextManager
 from pathlib import Path
+from subprocess import Popen
 from typing import Optional, List
 
 from dockerdo import prettyprint
@@ -21,6 +23,7 @@ from dockerdo.shell import (
     run_container_command,
     verify_container_state,
     run_ssh_master_process,
+    detect_background,
 )
 from dockerdo.utils import make_image_tag
 
@@ -61,7 +64,8 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
     set_execution_mode(verbose, dry_run)
     # Create the user config file
     user_config_dir = get_user_config_dir()
-    user_config_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        user_config_dir.mkdir(parents=True, exist_ok=True)
     user_config_path = user_config_dir / "dockerdo.yaml"
     bash_completion_path = user_config_dir / "dockerdo.bash-completion"
     if not user_config_path.exists():
@@ -69,40 +73,43 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
         with prettyprint.LongAction(
             host="local",
             running_verb="Creating",
-            done_verb="Created",
+            done_verb="Created" if not dry_run else "Would create",
             running_message=f"user config file {user_config_path}",
         ) as task:
-            with open(user_config_path, "w") as fout:
-                fout.write(initial_config.model_dump_yaml())
+            if not dry_run:
+                with open(user_config_path, "w") as fout:
+                    fout.write(initial_config.model_dump_yaml())
             task.set_status("OK")
     else:
         prettyprint.warning(f"Not overwriting existing config file {user_config_path}")
     with prettyprint.LongAction(
         host="local",
         running_verb="Creating",
-        done_verb="Created",
+        done_verb="Created" if not dry_run else "Would create",
         running_message=f"bash completion file {bash_completion_path}",
     ) as task:
-        with bash_completion_path.open("w") as fout:
-            bash_completion = importlib.resources.read_text(
-                "dockerdo", "dockerdo.bash-completion"
-            )
-            fout.write(bash_completion)
+        if not dry_run:
+            with bash_completion_path.open("w") as fout:
+                bash_completion = importlib.resources.read_text(
+                    "dockerdo", "dockerdo.bash-completion"
+                )
+                fout.write(bash_completion)
         task.set_status("OK")
     if not no_bashrc:
         with prettyprint.LongAction(
             host="local",
             running_verb="Modifying",
-            done_verb="Modified",
+            done_verb="Modified" if not dry_run else "Would modify",
             running_message="~/.bashrc",
         ) as task:
-            with Path("~/.bashrc").expanduser().open("a") as fout:
-                # Add the dodo alias to ~/.bashrc)
-                fout.write("\n# Added by dockerdo\nalias dodo='dockerdo run'\n")
-                # Add the dockerdo shell completion to ~/.bashrc
-                fout.write(
-                    f"[[ -f {bash_completion_path} ]] && source {bash_completion_path}\n"
-                )
+            if not dry_run:
+                with Path("~/.bashrc").expanduser().open("a") as fout:
+                    # Add the dodo alias to ~/.bashrc)
+                    fout.write("\n# Added by dockerdo\nalias dodo='dockerdo exec'\n")
+                    # Add the dockerdo shell completion to ~/.bashrc
+                    fout.write(
+                        f"[[ -f {bash_completion_path} ]] && source {bash_completion_path}\n"
+                    )
             task.set_status("OK")
     return 0
 
@@ -167,7 +174,7 @@ def init(
     return 0
 
 
-def _overlay(distro: Optional[str], image: Optional[str]) -> int:
+def _overlay(distro: Optional[str], image: Optional[str], dry_run: bool) -> int:
     """Overlay a Dockerfile with the changes needed by dockerdo"""
     user_config = load_user_config()
     session = load_session()
@@ -189,12 +196,12 @@ def _overlay(distro: Optional[str], image: Optional[str]) -> int:
     with prettyprint.LongAction(
         host="local",
         running_verb="Overlaying",
-        done_verb="Overlayed",
+        done_verb="Overlayed" if not dry_run else "Would overlay",
         running_message=f"image {session.base_image} into Dockerfile.dockerdo",
     ) as task:
         with open(dockerfile, "w") as f:
             f.write(dockerfile_content)
-        task.set_status(task.OK)
+        task.set_status("OK")
     return 0
 
 
@@ -206,7 +213,7 @@ def _overlay(distro: Optional[str], image: Optional[str]) -> int:
 def overlay(distro: Optional[str], image: Optional[str], verbose: bool, dry_run: bool) -> int:
     """Overlay a Dockerfile with the changes needed by dockerdo"""
     set_execution_mode(verbose, dry_run)
-    return _overlay(distro, image)
+    return _overlay(distro, image, dry_run)
 
 
 @cli.command()
@@ -224,7 +231,7 @@ def build(remote: bool, verbose: bool, dry_run: bool) -> int:
     cwd = Path(os.getcwd())
     dockerfile = cwd / "Dockerfile.dockerdo"
     if not dockerfile.exists():
-        _overlay(session.distro, session.base_image)
+        _overlay(session.distro, session.base_image, dry_run)
     session.image_tag = make_image_tag(
         session.docker_registry,
         session.base_image,
@@ -242,26 +249,32 @@ def build(remote: bool, verbose: bool, dry_run: bool) -> int:
         with prettyprint.LongAction(
             host="remote",
             running_verb="Building",
-            done_verb="Built",
+            done_verb="Built" if not dry_run else "Would build",
             running_message=f"image {session.image_tag} on {session.remote_host}",
         ) as task:
-            run_remote_command(
+            retval = run_remote_command(
                 build_cmd,
                 session,
             )
-            task.set_status(task.OK)
+            if retval == 0:
+                task.set_status("OK")
+            else:
+                return retval
     else:
         with prettyprint.LongAction(
             host="local",
             running_verb="Building",
-            done_verb="Built",
+            done_verb="Built" if not dry_run else "Would build",
             running_message=f"image {session.image_tag}",
         ) as task:
-            run_local_command(
+            retval = run_local_command(
                 build_cmd,
                 cwd=cwd,
             )
-            task.set_status(task.OK)
+            if retval == 0:
+                task.set_status("OK")
+            else:
+                return retval
     session.save()
     return 0
 
@@ -301,8 +314,8 @@ def push(verbose: bool, dry_run: bool) -> int:
     return 0
 
 
-@cli.command()
-@click.argument("docker_run_args", type=str, nargs=-1)
+@cli.command(context_settings=dict(ignore_unknown_options=True))
+@click.argument("docker_run_args", nargs=-1, type=click.UNPROCESSED)
 @click.option(
     "--no-default-args",
     is_flag=True,
@@ -323,6 +336,7 @@ def run(
     dry_run: bool,
 ) -> int:
     """Start the container"""
+    in_background = detect_background()
     set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
@@ -346,64 +360,90 @@ def run(
         f" -p {ssh_port_on_remote_host}:22 "
         f" --name {session.container_name} {session.image_tag}"
     )
-    with prettyprint.LongAction(
-        host="container",
-        running_verb="Starting",
-        done_verb="Started",
-        running_message=f"container {session.container_name}",
-    ) as task:
+    ctx_mgr: AbstractContextManager
+    if in_background:
+        ctx_mgr = nullcontext()
+    else:
+        ctx_mgr = prettyprint.LongAction(
+            host="container",
+            running_verb="Starting" if not dry_run else "Would start",
+            done_verb="Started" if not dry_run else "Would start",
+            running_message=f"container {session.container_name}",
+        )
+    with ctx_mgr as task:
         if session.remote_host is None:
-            run_local_command(command, cwd=session.local_work_dir)
+            retval = run_local_command(command, cwd=session.local_work_dir, silent=in_background)
         else:
-            run_remote_command(command, session)
-        session.container_state = "running"
-        session.save()
-        task.set_status(task.OK)
+            retval = run_remote_command(command, session)
+        if retval != 0:
+            return retval
+        if task:
+            task.set_status("OK")
 
     remote_host = (
         session.remote_host if session.remote_host is not None else "localhost"
     )
-    with prettyprint.LongAction(
-        host="local",
-        running_verb="Creating",
-        done_verb="Created",
-        running_message="SSH socket",
-    ) as task:
+    ssh_master_process: Optional[Popen] = None
+    if not in_background:
+        ctx_mgr = prettyprint.LongAction(
+            host="local",
+            running_verb="Creating" if not dry_run else "Would create",
+            done_verb="Created" if not dry_run else "Would create",
+            running_message="SSH socket",
+        )
+    with ctx_mgr as task:
         # sleep to wait for the container to start
-        time.sleep(2)
+        if not dry_run:
+            time.sleep(2)
         ssh_master_process = run_ssh_master_process(
             session=session,
             remote_host=remote_host,
             ssh_port_on_remote_host=ssh_port_on_remote_host
         )
-        if os.path.exists(session.session_dir / "ssh-socket"):
-            task.set_status(task.OK)
-    with prettyprint.LongAction(
-        host="local",
-        running_verb="Mounting",
-        done_verb="Mounted",
-        running_message="container filesystem",
-    ) as task:
-        os.makedirs(session.sshfs_container_mount_point, exist_ok=True)
-        run_local_command(
+        if task and os.path.exists(session.session_dir / "ssh-socket"):
+            task.set_status("OK")
+        if dry_run:
+            task.set_status("OK")
+
+    if not in_background:
+        ctx_mgr = prettyprint.LongAction(
+            host="local",
+            running_verb="Mounting" if not dry_run else "Would mount",
+            done_verb="Mounted" if not dry_run else "Would mount",
+            running_message="container filesystem",
+        )
+    with ctx_mgr as task:
+        if not dry_run:
+            os.makedirs(session.sshfs_container_mount_point, exist_ok=True)
+        retval = run_local_command(
             f"sshfs -p {ssh_port_on_remote_host}"
             f" {session.container_username}@{remote_host}:/"
             f" {session.sshfs_container_mount_point}",
             cwd=session.local_work_dir,
+            silent=in_background,
         )
-        if os.path.ismount(session.sshfs_container_mount_point):
-            task.set_status(task.OK)
+        if retval != 0:
+            return retval
+        if task and os.path.ismount(session.sshfs_container_mount_point):
+            task.set_status("OK")
+        if dry_run:
+            task.set_status("OK")
 
     session.record_inotify = session.record_inotify or record
-    session.save()
+    if not dry_run:
+        session.container_state = "running"
+        session.save()
 
     if session.record_inotify:
-        import dockerdo.inotify
+        if not dry_run:
+            import dockerdo.inotify
 
-        inotify_listener = dockerdo.inotify.InotifyListener(session)
-        inotify_listener.register_listeners()
-        prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
-        inotify_listener.listen()
+            inotify_listener = dockerdo.inotify.InotifyListener(session)
+            inotify_listener.register_listeners()
+            prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
+            inotify_listener.listen()
+        else:
+            prettyprint.info("Would record filesystem events")
 
     if ssh_master_process is None:
         return 1
@@ -429,12 +469,12 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
         return 1
     session.export(key, value)
     session.save()
-    prettyprint.action("container", "Exported", f"{key}={value}")
+    prettyprint.action("container", "Exported" if not dry_run else "Would export", f"{key}={value}")
     return 0
 
 
-@cli.command()
-@click.argument("args", type=str, nargs=-1)
+@cli.command(context_settings=dict(ignore_unknown_options=True))
+@click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def exec(args, verbose: bool, dry_run: bool) -> int:
@@ -444,8 +484,11 @@ def exec(args, verbose: bool, dry_run: bool) -> int:
     if session is None:
         return 1
     command = " ".join(args)
-    run_container_command(command=command, session=session)
+    retval = run_container_command(command=command, session=session)
+    if retval != 0:
+        return retval
     session.record_command(command)
+    session.save()
     return 0
 
 
@@ -546,16 +589,18 @@ def stop(verbose: bool, dry_run: bool) -> int:
     with prettyprint.LongAction(
         host="container",
         running_verb="Stopping",
-        done_verb="Stopped",
+        done_verb="Stopped" if not dry_run else "Would stop",
         running_message=f"container {session.container_name}",
     ) as task:
         if session.remote_host is None:
-            run_local_command(command, cwd=session.local_work_dir)
+            retval = run_local_command(command, cwd=session.local_work_dir)
         else:
-            run_remote_command(command, session)
+            retval = run_remote_command(command, session)
+        if retval != 0:
+            return retval
         session.container_state = "stopped"
         session.save()
-        task.set_status(task.OK)
+        task.set_status("OK")
     return 0
 
 
@@ -581,16 +626,36 @@ def history(verbose: bool, dry_run: bool) -> int:
 
 
 @cli.command()
+@click.option("-f", "--force", is_flag=True, help="Force removal of container")
+@click.option("--delete", is_flag=True, help="Delete session directory")
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
-def rm(verbose: bool, dry_run: bool) -> int:
+def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
     """Remove a container"""
     set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
 
-    command = f"docker rm {session.container_name}"
+    if session.remote_host is not None:
+        # Unmount remote host build directory
+        sshfs_remote_mount_point = session.sshfs_remote_mount_point
+        assert sshfs_remote_mount_point is not None
+        if os.path.ismount(sshfs_remote_mount_point):
+            with prettyprint.LongAction(
+                host="local",
+                running_verb="Unmounting",
+                done_verb="Unmounted",
+                running_message="remote host build directory",
+            ) as task:
+                run_local_command(
+                    f"fusermount -u {sshfs_remote_mount_point}",
+                    cwd=session.local_work_dir,
+                )
+                task.set_status("OK")
+
+    force_flag = "-f" if force else ""
+    command = f"docker rm {force_flag} {session.container_name}"
     with prettyprint.LongAction(
         host="container",
         running_verb="Removing",
@@ -598,12 +663,24 @@ def rm(verbose: bool, dry_run: bool) -> int:
         running_message=f"container {session.container_name}",
     ) as task:
         if session.remote_host is None:
-            run_local_command(command, cwd=session.local_work_dir)
+            retval = run_local_command(command, cwd=session.local_work_dir, silent=True)
         else:
-            run_remote_command(command, session)
+            retval = run_remote_command(command, session)
+        if retval != 0:
+            return retval
         session.container_state = "nothing"
         session.save()
-        task.set_status(task.OK)
+        task.set_status("OK")
+
+    if delete:
+        with prettyprint.LongAction(
+            host="local",
+            running_verb="Deleting",
+            done_verb="Deleted",
+            running_message=f"session directory {session.session_dir}",
+        ) as task:
+            session.session_dir.rmdir()
+            task.set_status("OK")
     return 0
 
 

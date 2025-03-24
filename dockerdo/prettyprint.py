@@ -54,7 +54,7 @@ def format_action(host: Host, verb: str, text: Union[str, Text], status: ActionS
         (pad, ""),
     )
     message = Text.assemble(
-        (f"{verb:>9}", "bold green"),
+        (f"{verb:>13}", "bold green"),
         (" ", ""),
         text,
     )
@@ -126,7 +126,7 @@ class LongAction:
         return self
 
     def __exit__(self, *args, **kwargs):
-        if not self.status:
+        if self.status == "RUNNING":
             # If you didn't set a status before exit, then it failed
             self.set_status("FAIL")
         else:
@@ -134,3 +134,6 @@ class LongAction:
             self._live.update(self._render(), refresh=True)
         self._live.__exit__(*args, **kwargs)
         self._live = None
+
+    def __bool__(self):
+        return True

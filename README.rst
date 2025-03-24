@@ -1,6 +1,6 @@
-========
-dockerdo
-========
+===============
+dockerdo / dodo
+===============
 
 .. image:: https://img.shields.io/pypi/v/dockerdo.svg
         :target: https://pypi.python.org/pypi/dockerdo
@@ -128,6 +128,7 @@ dockerdo export
 ^^^^^^^^^^^^^^^
 
 * Add or overwrite an environment variable in the session environment.
+* Even though this command can be used after starting the container, if you need to add a large number of variables, it is recommended to run `dockerdo export` before `dockerdo run`.
 
 dockerdo exec (alias dodo)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^

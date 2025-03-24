@@ -5,8 +5,8 @@ import os
 import shlex
 import sys
 from pathlib import Path
-from subprocess import Popen, PIPE, check_output, CalledProcessError
-from typing import Optional
+from subprocess import Popen, PIPE, DEVNULL, check_output, CalledProcessError
+from typing import Optional, TextIO
 
 from dockerdo import prettyprint
 from dockerdo.config import Session
@@ -42,17 +42,25 @@ def get_container_work_dir(session: Session) -> Optional[Path]:
         return None
 
 
-def run_local_command(command: str, cwd: Path) -> int:
+def run_local_command(command: str, cwd: Path, silent: bool = False) -> int:
     """
     Run a command on the local host, piping through stdin, stdout, and stderr.
     The command may be potentially long-lived and both read and write large amounts of data.
     """
-    if verbose:
-        print(f"+ {command}", file=sys.stderr)
+    stdout: int | TextIO
+    stderr: int | TextIO
+    if silent:
+        stdout = DEVNULL
+        stderr = DEVNULL
+    else:
+        stdout = sys.stdout
+        stderr = sys.stderr
+        if verbose:
+            print(f"+ {command}", file=sys.stderr)
     args = shlex.split(command)
     if not dry_run:
         with Popen(
-            args, stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr, cwd=cwd
+            args, stdin=sys.stdin, stdout=stdout, stderr=stderr, cwd=cwd
         ) as process:
             process.wait()
             return process.returncode
@@ -149,6 +157,12 @@ def verify_container_state(session: Session) -> bool:
         return session.container_state == "running"
     try:
         output = check_output(shlex.split(command), cwd=session.local_work_dir)
+        if len(output) == 0:
+            # no container found
+            if session.container_state != "nothing":
+                prettyprint.warning(f"Expected container state {session.container_state}, but no container found")
+            session.container_state = "nothing"
+            return False
         response_dict = json.loads(output)
         if response_dict["State"] == "running":
             # "running" is the only state that is acceptable when expected "running"
@@ -193,3 +207,8 @@ def run_ssh_master_process(session: Session, remote_host: str, ssh_port_on_remot
             return None
     else:
         return None
+
+
+def detect_background() -> bool:
+    """Detect if the process is running in the background"""
+    return os.getpgrp() != os.tcgetpgrp(sys.stdout.fileno())
