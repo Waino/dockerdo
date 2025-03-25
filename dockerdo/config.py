@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
 from pydantic import Field
 from tempfile import mkdtemp
-from typing import Optional, Set, Literal
+from typing import Optional, Set, Literal, Dict
 
 from dockerdo.utils import ephemeral_container_name
 from dockerdo import prettyprint
@@ -46,7 +46,7 @@ class Session(BaseModel):
 
     name: str
     container_name: str
-    env: dict[str, str] = Field(default_factory=dict)
+    env: Dict[str, str] = Field(default_factory=dict)
     remote_host: Optional[str] = None
     distro: str
     base_image: str
@@ -62,6 +62,7 @@ class Session(BaseModel):
 
     modified_files: Set[Path] = set()
     container_state: Literal["nothing", "running", "stopped"] = "nothing"
+    exported_after_start: Set[str] = set()
 
     @classmethod
     def from_opts(
@@ -155,10 +156,16 @@ class Session(BaseModel):
     def export(self, key: str, value: str) -> None:
         """Export a key-value pair to the session environment"""
         self.env[key] = value
+        if self.container_state == "running":
+            self.exported_after_start.add(key)
         env_file = self.session_dir / "env.list"
         with open(env_file, "w") as f:
             for key, value in sorted(self.env.items()):
                 f.write(f"{key}={value}\n")
+
+    def get_exported_after_start(self) -> Dict[str, str]:
+        """Get the environment variables that were exported after the container was started"""
+        return {key: value for (key, value) in self.env.items() if key in self.exported_after_start}
 
     def save(self) -> None:
         """Save the session to a file in the session directory"""

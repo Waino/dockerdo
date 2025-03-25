@@ -355,9 +355,22 @@ def run(
         ssh_port_on_remote_host = 2222
     session.ssh_port_on_remote_host = ssh_port_on_remote_host
 
+    if session.remote_host is None:
+        env_file_path = session.session_dir / "env.list"
+        if not env_file_path.exists():
+            with open(env_file_path, "w") as f:
+                for key, value in sorted(session.env.items()):
+                    f.write(f"{key}={value}\n")
+    else:
+        env_file_path = session.remote_host_build_dir / "env.list"
+        with open(env_file_path, "w") as f:
+            for key, value in sorted(session.env.items()):
+                f.write(f"{key}={value}\n")
+
     command = (
         f"docker run -d {docker_run_args_str}"
         f" -p {ssh_port_on_remote_host}:22 "
+        f" --env-file {env_file_path}"
         f" --name {session.container_name} {session.image_tag}"
     )
     ctx_mgr: AbstractContextManager
@@ -400,6 +413,8 @@ def run(
             remote_host=remote_host,
             ssh_port_on_remote_host=ssh_port_on_remote_host
         )
+        # sleep to wait for the ssh master process to start
+        time.sleep(2)
         if task and os.path.exists(session.session_dir / "ssh-socket"):
             task.set_status("OK")
         if dry_run:
@@ -440,8 +455,9 @@ def run(
 
             inotify_listener = dockerdo.inotify.InotifyListener(session)
             inotify_listener.register_listeners()
-            prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
-            inotify_listener.listen()
+            if not in_background:
+                prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
+            inotify_listener.listen(verbose=verbose)
         else:
             prettyprint.info("Would record filesystem events")
 
@@ -484,7 +500,13 @@ def exec(args, verbose: bool, dry_run: bool) -> int:
     if session is None:
         return 1
     command = " ".join(args)
-    retval = run_container_command(command=command, session=session)
+    exported_after_start = session.get_exported_after_start()
+    if len(exported_after_start) > 0:
+        joined = ' '.join(f'{key}={value}' for key, value in exported_after_start.items())
+        set_env = f"-o SetEnv='{joined}'"
+    else:
+        set_env = ""
+    retval = run_container_command(command=command, session=session, set_env=set_env)
     if retval != 0:
         return retval
     session.record_command(command)

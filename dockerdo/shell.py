@@ -89,7 +89,7 @@ def run_remote_command(command: str, session: Session) -> int:
     return run_local_command(wrapped_command, cwd=cwd)
 
 
-def run_container_command(command: str, session: Session) -> int:
+def run_container_command(command: str, session: Session, set_env: str = "") -> int:
     """
     Run a command on the container, piping through stdin, stdout, and stderr.
     """
@@ -106,6 +106,7 @@ def run_container_command(command: str, session: Session) -> int:
             f"ssh -S {session.session_dir}/ssh-socket"
             f" -p {session.ssh_port_on_remote_host} {session.container_username}@localhost"
             " -o StrictHostKeyChecking=no"
+            " {set_env}"
             f' "cd {container_work_dir} && {escaped_command}"'
         )
     else:
@@ -114,6 +115,7 @@ def run_container_command(command: str, session: Session) -> int:
             f" -J {session.remote_host} -p {session.ssh_port_on_remote_host}"
             f" {session.container_username}@{session.remote_host}"
             " -o StrictHostKeyChecking=no"
+            " {set_env}"
             f' "cd {container_work_dir} && {escaped_command}"'
         )
     cwd = Path(os.getcwd())
