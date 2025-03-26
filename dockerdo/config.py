@@ -236,3 +236,17 @@ class Session(BaseModel):
                 except json.JSONDecodeError:
                     pass
             return history
+
+    def write_container_env_file(self, verbose: bool = False) -> None:
+        """Write the container env file to a file inside the container"""
+        path_on_host = self.sshfs_container_mount_point / self.env_file_path.relative_to(Path('/'))
+        if verbose:
+            prettyprint.info(f"Writing container env file to {path_on_host}")
+        with open(path_on_host, "w") as f:
+            for key, value in self.env.items():
+                f.write(f"export {key}={value}\n")
+
+    @property
+    def env_file_path(self) -> Path:
+        """Path of the env file within the container"""
+        return Path("/tmp") / f"{self.name}.env.list"

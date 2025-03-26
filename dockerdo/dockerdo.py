@@ -490,12 +490,8 @@ def exec(args, verbose: bool, dry_run: bool) -> int:
     if session is None:
         return 1
     command = " ".join(args)
-    if len(session.env) > 0:
-        joined = ' '.join(f'{key}={value}' for key, value in session.env.items())
-        set_env = f"-o SetEnv='{joined}'"
-    else:
-        set_env = ""
-    retval, container_work_dir = run_container_command(command=command, session=session, set_env=set_env)
+    session.write_container_env_file(verbose=verbose)
+    retval, container_work_dir = run_container_command(command=command, session=session)
     if retval != 0:
         return retval
     session.record_command(command, container_work_dir)

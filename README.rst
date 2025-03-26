@@ -128,7 +128,7 @@ dockerdo export
 ^^^^^^^^^^^^^^^
 
 * Add or overwrite an environment variable in the session environment.
-* Note that all the variables must be passed on the command line in each ssh command: don't use this for large number of variables, or large values. Never pass secrets this way.
+* Never pass secrets this way.
 
 dockerdo exec (alias dodo)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^

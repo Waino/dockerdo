@@ -11,7 +11,6 @@ FROM {image} AS base
 ARG SSH_PUB_KEY
 RUN {package_install}
 RUN mkdir -p /var/run/sshd \
-    && echo "AcceptEnv *" >> "/etc/ssh/sshd_config" \
     && mkdir -p {homedir}/.ssh \
     && chmod 700 {homedir}/.ssh \
     && echo "$SSH_PUB_KEY" > {homedir}/.ssh/authorized_keys \
