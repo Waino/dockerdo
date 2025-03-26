@@ -176,7 +176,6 @@ def init(
 
 def _overlay(distro: Optional[str], image: Optional[str], dry_run: bool) -> int:
     """Overlay a Dockerfile with the changes needed by dockerdo"""
-    user_config = load_user_config()
     session = load_session()
     if session is None:
         return 1
@@ -191,7 +190,6 @@ def _overlay(distro: Optional[str], image: Optional[str], dry_run: bool) -> int:
         distro=session.distro,
         image=session.base_image,
         homedir=session.get_homedir(),
-        ssh_key_path=user_config.ssh_key_path,
     )
     with prettyprint.LongAction(
         host="local",

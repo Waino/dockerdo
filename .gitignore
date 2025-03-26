@@ -8,6 +8,3 @@ docs/source/autodoc/**
 htmlcov
 .venv
 activate
-
-# temporarily
-tests

@@ -38,13 +38,11 @@ def format_dockerfile(
     distro: str,
     image: str,
     homedir: Path,
-    ssh_key_path: Path,
 ) -> str:
     """Format a Dockerfile"""
     dockerfile, kwargs = DOCKERFILES[distro]
     return dockerfile.format(
         image=image,
         homedir=homedir,
-        ssh_key_path=ssh_key_path,
         **kwargs,
     )

@@ -4,7 +4,7 @@ import yaml
 import json
 from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
-from pydantic import Field
+from pydantic import Field, ConfigDict
 from tempfile import mkdtemp
 from typing import Optional, Set, Literal, Dict, List
 
@@ -15,10 +15,7 @@ from dockerdo import prettyprint
 class BaseModel(PydanticBaseModel):
     """Extend Pydantic BaseModel with common functionality"""
 
-    class Config:
-        """Pydantic config"""
-
-        extra = "ignore"
+    model_config = ConfigDict(extra='ignore')
 
     def model_dump_yaml(self, exclude: Optional[set[str]] = None) -> str:
         """Dump the model as yaml"""
@@ -154,14 +151,17 @@ class Session(BaseModel):
         """Record a file write in the session history"""
         self.modified_files.add(file)
 
-    def export(self, key: str, value: str) -> None:
-        """Export a key-value pair to the session environment"""
+    def _update_env(self, key: str, value: str) -> None:
         if len(value.strip()) == 0:
             if key not in self.env:
                 return
             del self.env[key]
         else:
             self.env[key] = value
+
+    def export(self, key: str, value: str) -> None:
+        """Export a key-value pair to the session environment"""
+        self._update_env(key, value)
         env_file = self.session_dir / "env.list"
         with open(env_file, "w") as f:
             for key, value in sorted(self.env.items()):
@@ -179,11 +179,16 @@ class Session(BaseModel):
             f.write(self.model_dump_yaml())
 
     @classmethod
+    def from_yaml(cls, yaml_str: str) -> "Session":
+        """Load the config from yaml"""
+        return cls(**yaml.safe_load(yaml_str))
+
+    @classmethod
     def load(cls, session_dir: Path) -> "Session":
         """Load the session from a file in the session directory"""
         session_file = session_dir / "session.yaml"
         with open(session_file, "r") as f:
-            return cls(**yaml.safe_load(f.read()))
+            return cls.from_yaml(f.read())
 
     @property
     def sshfs_remote_mount_point(self) -> Optional[Path]:
