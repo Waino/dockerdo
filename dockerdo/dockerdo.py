@@ -355,22 +355,9 @@ def run(
         ssh_port_on_remote_host = 2222
     session.ssh_port_on_remote_host = ssh_port_on_remote_host
 
-    if session.remote_host is None:
-        env_file_path = session.session_dir / "env.list"
-        if not env_file_path.exists():
-            with open(env_file_path, "w") as f:
-                for key, value in sorted(session.env.items()):
-                    f.write(f"{key}={value}\n")
-    else:
-        env_file_path = session.remote_host_build_dir / "env.list"
-        with open(env_file_path, "w") as f:
-            for key, value in sorted(session.env.items()):
-                f.write(f"{key}={value}\n")
-
     command = (
         f"docker run -d {docker_run_args_str}"
         f" -p {ssh_port_on_remote_host}:22 "
-        f" --env-file {env_file_path}"
         f" --name {session.container_name} {session.image_tag}"
     )
     ctx_mgr: AbstractContextManager
@@ -485,7 +472,10 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
         return 1
     session.export(key, value)
     session.save()
-    prettyprint.action("container", "Exported" if not dry_run else "Would export", f"{key}={value}")
+    if len(value.strip()) == 0:
+        prettyprint.action("container", "Unexported" if not dry_run else "Would unexport", key)
+    else:
+        prettyprint.action("container", "Exported" if not dry_run else "Would export", f"{key}={value}")
     return 0
 
 
@@ -500,16 +490,15 @@ def exec(args, verbose: bool, dry_run: bool) -> int:
     if session is None:
         return 1
     command = " ".join(args)
-    exported_after_start = session.get_exported_after_start()
-    if len(exported_after_start) > 0:
-        joined = ' '.join(f'{key}={value}' for key, value in exported_after_start.items())
+    if len(session.env) > 0:
+        joined = ' '.join(f'{key}={value}' for key, value in session.env.items())
         set_env = f"-o SetEnv='{joined}'"
     else:
         set_env = ""
-    retval = run_container_command(command=command, session=session, set_env=set_env)
+    retval, container_work_dir = run_container_command(command=command, session=session, set_env=set_env)
     if retval != 0:
         return retval
-    session.record_command(command)
+    session.record_command(command, container_work_dir)
     session.save()
     return 0
 
@@ -636,6 +625,10 @@ def history(verbose: bool, dry_run: bool) -> int:
     if session is None:
         return 1
 
+    if len(session.env) > 0:
+        prettyprint.info("Environment variables:")
+        for key, value in session.env.items():
+            print(f"{key}={value}")
     if session.record_inotify:
         prettyprint.info("Modified files:")
         for file in session.modified_files:
@@ -643,7 +636,7 @@ def history(verbose: bool, dry_run: bool) -> int:
     else:
         prettyprint.info("Recording of modified files is disabled")
     prettyprint.info("Command history:")
-    print(session.get_command_history())
+    prettyprint.command_history(session.get_command_history())
     return 0
 
 

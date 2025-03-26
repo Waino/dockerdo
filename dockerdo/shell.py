@@ -6,7 +6,7 @@ import shlex
 import sys
 from pathlib import Path
 from subprocess import Popen, PIPE, DEVNULL, check_output, CalledProcessError
-from typing import Optional, TextIO
+from typing import Optional, TextIO, Tuple
 
 from dockerdo import prettyprint
 from dockerdo.config import Session
@@ -89,7 +89,7 @@ def run_remote_command(command: str, session: Session) -> int:
     return run_local_command(wrapped_command, cwd=cwd)
 
 
-def run_container_command(command: str, session: Session, set_env: str = "") -> int:
+def run_container_command(command: str, session: Session, set_env: str = "") -> Tuple[int, Path]:
     """
     Run a command on the container, piping through stdin, stdout, and stderr.
     """
@@ -98,7 +98,7 @@ def run_container_command(command: str, session: Session, set_env: str = "") -> 
         prettyprint.error(
             f"Current working directory is not inside the container mount point {session.sshfs_container_mount_point}"
         )
-        return 1
+        return 1, Path()
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
     if session.remote_host is None:
         # remote_host is the same as local_host
@@ -106,7 +106,7 @@ def run_container_command(command: str, session: Session, set_env: str = "") -> 
             f"ssh -S {session.session_dir}/ssh-socket"
             f" -p {session.ssh_port_on_remote_host} {session.container_username}@localhost"
             " -o StrictHostKeyChecking=no"
-            " {set_env}"
+            f" {set_env}"
             f' "cd {container_work_dir} && {escaped_command}"'
         )
     else:
@@ -115,11 +115,11 @@ def run_container_command(command: str, session: Session, set_env: str = "") -> 
             f" -J {session.remote_host} -p {session.ssh_port_on_remote_host}"
             f" {session.container_username}@{session.remote_host}"
             " -o StrictHostKeyChecking=no"
-            " {set_env}"
+            f" {set_env}"
             f' "cd {container_work_dir} && {escaped_command}"'
         )
     cwd = Path(os.getcwd())
-    return run_local_command(wrapped_command, cwd=cwd)
+    return run_local_command(wrapped_command, cwd=cwd), container_work_dir
 
 
 def run_docker_save_pipe(

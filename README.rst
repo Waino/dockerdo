@@ -128,14 +128,14 @@ dockerdo export
 ^^^^^^^^^^^^^^^
 
 * Add or overwrite an environment variable in the session environment.
-* Even though this command can be used after starting the container, if you need to add a large number of variables, it is recommended to run `dockerdo export` before `dockerdo run`.
+* Note that all the variables must be passed on the command line in each ssh command: don't use this for large number of variables, or large values. Never pass secrets this way.
 
 dockerdo exec (alias dodo)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 * Executes a command in the running container.
 * The working directory is deduced from the current working directory on the local host.
-  E.g. if you ran `dockerdo init` in `/home/user/project`, and are now in `/home/user/container/opt/mysoftware`, 
+  E.g. if you ran `dockerdo init` in `/home/user/project`, and are now in `/home/user/container/opt/mysoftware`,
   the working directory on the container is `/opt/mysoftware`.
 * Note that you can pipe text in and out of the command, and the piping happens on the local host.
 
@@ -198,10 +198,10 @@ Caveats
   or by setting the variables in a launcher script that you write and place in your image.
   To help you set up the env list, there is the `dockerdo export` subcommand
 
-    * **Env list** is the best approach when you need different values in different container instances launched from the same image, 
+    * **Export** is the best approach when you need different values in different container instances launched from the same image,
       and when you need the env variables in multiple different programs. For example, setting the parameters of a benchmark.
     * **A launcher script** is the best approach when you have a single program that requires some env variables,
-      and you always want to use the same value.
+      and you always want to use the same values. Also the best approach if you have large amounts of data that you want to pass to the program through env variables.
 
 * **`dockerdo history` with recording will only list edits done via the sshfs mount.**
   Inotify runs on your local machine, and can only detect filesystem operations that happen locally.

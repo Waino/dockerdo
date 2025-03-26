@@ -1,11 +1,12 @@
 """User configuration and session data"""
 
 import yaml
+import json
 from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
 from pydantic import Field
 from tempfile import mkdtemp
-from typing import Optional, Set, Literal, Dict
+from typing import Optional, Set, Literal, Dict, List
 
 from dockerdo.utils import ephemeral_container_name
 from dockerdo import prettyprint
@@ -62,7 +63,6 @@ class Session(BaseModel):
 
     modified_files: Set[Path] = set()
     container_state: Literal["nothing", "running", "stopped"] = "nothing"
-    exported_after_start: Set[str] = set()
 
     @classmethod
     def from_opts(
@@ -140,14 +140,15 @@ class Session(BaseModel):
         else:
             return Path(f"/home/{self.container_username}")
 
-    def record_command(self, command: str) -> None:
+    def record_command(self, command: str, path: Path) -> None:
         """
         Record a command in the session history.
         The command history is appended to a file in the session directory.
         """
-        history_file = self.session_dir / "command_history"
+        history_file = self.session_dir / "command_history.jsonl"
         with open(history_file, "a") as f:
-            f.write(f"{command}\n")
+            json.dump({"cwd": str(path), "command": command}, f)
+            f.write("\n")
 
     def record_modified_file(self, file: Path) -> None:
         """Record a file write in the session history"""
@@ -155,17 +156,16 @@ class Session(BaseModel):
 
     def export(self, key: str, value: str) -> None:
         """Export a key-value pair to the session environment"""
-        self.env[key] = value
-        if self.container_state == "running":
-            self.exported_after_start.add(key)
+        if len(value.strip()) == 0:
+            if key not in self.env:
+                return
+            del self.env[key]
+        else:
+            self.env[key] = value
         env_file = self.session_dir / "env.list"
         with open(env_file, "w") as f:
             for key, value in sorted(self.env.items()):
                 f.write(f"{key}={value}\n")
-
-    def get_exported_after_start(self) -> Dict[str, str]:
-        """Get the environment variables that were exported after the container was started"""
-        return {key: value for (key, value) in self.env.items() if key in self.exported_after_start}
 
     def save(self) -> None:
         """Save the session to a file in the session directory"""
@@ -223,10 +223,16 @@ class Session(BaseModel):
         activate_script.chmod(0o755)
         return activate_script
 
-    def get_command_history(self) -> str:
+    def get_command_history(self) -> List[Dict[str, str]]:
         """Get the command history"""
-        history_file = self.session_dir / "command_history"
+        history_file = self.session_dir / "command_history.jsonl"
         if not history_file.exists():
-            return ""
+            return []
         with open(history_file, "r") as f:
-            return f.read()
+            history = []
+            for line in f:
+                try:
+                    history.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+            return history

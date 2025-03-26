@@ -5,7 +5,7 @@ import sys
 from rich.text import Text
 from typing import Union
 from rich.live import Live
-from typing import Literal, Optional
+from typing import Literal, Optional, List, Dict
 
 Host = Literal["local", "remote", "container"]
 ActionStatus = Literal["RUNNING", "OK", "WARN", "FAIL"]
@@ -85,6 +85,15 @@ def container_status(status: str) -> None:
     else:
         color = "red"
     info(f"Container status: [bold {color}]{status}[/bold {color}]")
+
+
+def command_history(history: List[Dict[str, str]]) -> None:
+    prev_path = None
+    for command in history:
+        if command["cwd"] != prev_path:
+            rich.print(f"[bold blue]cd {command['cwd']}[/bold blue]", file=sys.stderr)
+            prev_path = command["cwd"]
+        print(command["command"], file=sys.stderr)
 
 
 class LongAction:
