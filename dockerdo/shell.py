@@ -6,7 +6,7 @@ import shlex
 import sys
 from pathlib import Path
 from subprocess import Popen, PIPE, DEVNULL, check_output, CalledProcessError
-from typing import Optional, TextIO, Tuple
+from typing import Optional, TextIO, Tuple, Literal
 
 from dockerdo import prettyprint
 from dockerdo.config import Session
@@ -141,52 +141,59 @@ def run_docker_save_pipe(
     return 0
 
 
-def verify_container_state(session: Session) -> bool:
-    """
-    Verify the container state.
+def parse_docker_ps_output(output: str) -> Optional[str]:
+    """Helper to parse docker ps output"""
+    if len(output) == 0:
+        return None
+    return json.loads(output).get("State", None)
 
-    Updates the Session object, and returns True if the container is running.
-    Prints a warning if the container state is unexpected.
-    """
+
+def determine_acceptable_container_state(
+    actual_state: Optional[str],
+) -> Literal["nothing", "running", "stopped"] | None:
+    """Helper to determine container state from parsed info"""
+    if actual_state is None:
+        return "nothing"
+    if actual_state == "running":
+        return "running"
+    elif actual_state in {"exited", "paused", "dead", "restarting", "created"}:
+        return "stopped"
+    else:
+        return None
+
+
+def verify_container_state(session: Session) -> bool:
+    """Orchestrates the container state verification"""
     command = f"docker ps -a --filter name={session.container_name} --format json"
     if session.remote_host is not None:
         command = make_remote_command(command, session)
+
     if verbose:
         print(f"+ {command}", file=sys.stderr)
     if dry_run:
         return session.container_state == "running"
+
     try:
         output = check_output(shlex.split(command), cwd=session.local_work_dir)
-        if len(output) == 0:
-            # no container found
-            if session.container_state != "nothing":
-                prettyprint.warning(f"Expected container state {session.container_state}, but no container found")
-            session.container_state = "nothing"
-            return False
-        response_dict = json.loads(output)
-        if response_dict["State"] == "running":
-            # "running" is the only state that is acceptable when expected "running"
-            if session.container_state != "running":
-                prettyprint.warning(f"Expected container state {session.container_state}, but container is running")
-            session.container_state = "running"
-            return True
-        elif response_dict["State"] in {"exited", "paused", "dead", "restarting", "created"}:
-            # states considered acceptable when expected "stopped"
-            if session.container_state != "stopped":
-                prettyprint.warning(
-                    f"Expected container state {session.container_state}, but container is {response_dict['State']}"
-                )
-            session.container_state = "stopped"
-            return False
-        else:
-            prettyprint.error(f"Unexpected container state: {response_dict['State']}")
-            return False
     except CalledProcessError as e:
         prettyprint.error(f"Error running docker ps: {e}")
         return False
     except json.JSONDecodeError as e:
         prettyprint.error(f"Error decoding docker ps output: {e}")
         return False
+
+    actual_state = parse_docker_ps_output(output.decode("utf-8"))
+    acceptable_state = determine_acceptable_container_state(actual_state)
+    if acceptable_state is None:
+        prettyprint.error(f"Unexpected container state: {actual_state}")
+        return False
+    if actual_state is None:
+        actual_state = "no container"
+
+    if session.container_state != acceptable_state:
+        prettyprint.warning(f"Expected container state {session.container_state}, but found {actual_state}")
+    session.container_state = acceptable_state
+    return acceptable_state == "running"
 
 
 def run_ssh_master_process(session: Session, remote_host: str, ssh_port_on_remote_host: int) -> Optional[Popen]:
