@@ -21,8 +21,13 @@ def test_format_bullet(status, expected):
     assert str(result) == expected
 
 
-def test_format_action():
+@pytest.mark.parametrize("host, verb, text, status, expected", [
+    ("local", "verb", "text", "OK", "(+) [local] verb text"),
+    ("remote", "aaa", "bbb", "OK", "(+) [remote] aaa bbb"),
+    ("container", "verb", "text", "OK", "(+) [container] verb text"),
+])
+def test_format_action(host, verb, text, status, expected):
     """Test format_action function, ignoring the amount of whitespace"""
-    result = str(format_action("aaa", "bbb", "ccc"))
+    result = str(format_action(host, verb, text, status))
     result = RE_MULTISPACE.sub(" ", result)
-    assert result == "(+) [aaa] bbb ccc"
+    assert result == expected

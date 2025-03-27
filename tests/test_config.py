@@ -109,6 +109,15 @@ def test_session_from_opts_override_all():
     assert session.sshfs_container_mount_point == Path("/another/workdir/container")
     assert session.env_file_path == Path("/tmp/my_session.env.list")
 
+    assert session.format_activate_script() == """
+set -x
+export DOCKERDO_SESSION_DIR=/home/user/.local/share/dockerdo/my_session
+export DOCKERDO_SESSION_NAME=my_session
+mkdir -p /another/workdir/reno
+sshfs reno:/tmp/build /another/workdir/reno
+set +x
+""".lstrip()
+
     # test roundtrip
     session2 = Session.from_yaml(session.model_dump_yaml())
     assert session2 == session
@@ -215,3 +224,38 @@ def test_session_env_management():
     # unset
     session._update_env("FOO", "")
     assert session.env == {"UNCHANGED": "unchanged"}
+    # unset nonexistent
+    session._update_env("NONEXISTENT", "")
+    assert session.env == {"UNCHANGED": "unchanged"}
+
+
+def test_session_from_opts_persistent_already_exists():
+    """Test the Session.from_opts method, mocking expanduser and exists"""
+    user_config = UserConfig(
+        default_remote_host="reykjavik",
+        default_distro="alpine",
+        default_image="alpine:latest",
+        default_docker_registry="docker.io",
+        default_docker_run_args="--rm",
+        always_record_inotify=True,
+    )
+    with mock.patch(
+        "dockerdo.config.Path.expanduser",
+        return_value=Path("/home/user/.local/share/dockerdo/my_session")
+    ):
+        with mock.patch("dockerdo.config.Path.exists", return_value=True):
+            session = Session.from_opts(
+                session_name='my_session',
+                container_name='my_container',
+                remote_host='reno',
+                local=False,
+                distro="ubuntu",
+                base_image="mycustom:nightly",
+                container_username="ubuntu",
+                docker_registry="harbor.local",
+                record_inotify=False,
+                remote_host_build_dir=Path("/tmp/build"),
+                local_work_dir=Path("/another/workdir"),
+                user_config=user_config,
+            )
+            assert session is None
