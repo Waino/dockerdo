@@ -5,7 +5,6 @@ set -eux
 ruff check
 
 # Alt 2: Reformat using black
-# echo "####### black"
 # black --skip-string-normalization
 
 # Unit tests

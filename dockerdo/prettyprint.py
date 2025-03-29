@@ -4,6 +4,7 @@ import rich
 import sys
 from rich.text import Text
 from typing import Union
+from rich.console import Console
 from rich.live import Live
 from typing import Literal, Optional, List, Dict
 
@@ -131,7 +132,8 @@ class LongAction:
 
     def __enter__(self):
         self.set_status("RUNNING")
-        self._live = Live(self._render(), auto_refresh=False).__enter__()
+        console = Console(stderr=True)
+        self._live = Live(self._render(), auto_refresh=False, console=console).__enter__()
         return self
 
     def __exit__(self, *args, **kwargs):

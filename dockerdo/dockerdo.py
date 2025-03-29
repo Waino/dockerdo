@@ -688,8 +688,22 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
             done_verb="Deleted",
             running_message=f"session directory {session.session_dir}",
         ) as task:
-            session.session_dir.rmdir()
-            task.set_status("OK")
+            # delete the expected directory contents first
+            for file_name in ["activate", "command_history.jsonl", "env.list", "session.yaml"]:
+                file_path = session.session_dir / file_name
+                if file_path.exists():
+                    file_path.unlink()
+            # Now the directory should be empty, so we can delete it
+            try:
+                session.session_dir.rmdir()
+                task.set_status("OK")
+            except OSError:
+                prettyprint.error(f"There are extraneous files in {session.session_dir}")
+                for file in session.session_dir.iterdir():
+                    print(file)
+                task.set_status("ERROR")
+                return 1
+    prettyprint.info("Remember to call deactivate_dockerdo")
     return 0
 
 

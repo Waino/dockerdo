@@ -50,6 +50,7 @@ def test_session_from_opts_defaults():
 set -x
 export DOCKERDO_SESSION_DIR=/tmp/dockerdo_1234a67890
 export DOCKERDO_SESSION_NAME=1234a67890
+function deactivate_dockerdo { unset DOCKERDO_SESSION_DIR; unset DOCKERDO_SESSION_NAME; }
 set +x
 """.lstrip()
 
@@ -113,6 +114,7 @@ def test_session_from_opts_override_all():
 set -x
 export DOCKERDO_SESSION_DIR=/home/user/.local/share/dockerdo/my_session
 export DOCKERDO_SESSION_NAME=my_session
+function deactivate_dockerdo { unset DOCKERDO_SESSION_DIR; unset DOCKERDO_SESSION_NAME; }
 mkdir -p /another/workdir/reno
 sshfs reno:/tmp/build /another/workdir/reno
 set +x

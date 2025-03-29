@@ -209,6 +209,7 @@ class Session(BaseModel):
         result.append("set -x\n")
         result.append(f"export DOCKERDO_SESSION_DIR={self.session_dir}\n")
         result.append(f"export DOCKERDO_SESSION_NAME={self.name}\n")
+        result.append("function deactivate_dockerdo { unset DOCKERDO_SESSION_DIR; unset DOCKERDO_SESSION_NAME; }\n")
 
         # Mount remote host build directory if using remote host
         if self.remote_host is not None:
