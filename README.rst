@@ -68,9 +68,9 @@ This can be a tedious workflow.
 
 Dockerdo makes it a bit easier.
 You can use your customized shell to move around, and your customized editor to write the files.
-The `dockerdo history` command will list any files you modified, so that you can copy them to the repo to be used when building the Dockerfile.
-The `dockerdo history` command will also list all the installation commands you executed, so you can copypaste into the Dockerfile.
-Any local commands you run in between (`man`, `diff`, `grep`, ...) are not included in the history, making it easy to find the relevant commands.
+The ``dockerdo history`` command will list any files you modified, so that you can copy them to the repo to be used when building the Dockerfile.
+The ``dockerdo history`` command will also list all the installation commands you executed, so you can copypaste into the Dockerfile.
+Any local commands you run in between (``man``, ``diff``, ``grep``, ...) are not included in the history, making it easy to find the relevant commands.
 
 Commands
 --------
@@ -78,34 +78,36 @@ Commands
 dockerdo install
 ^^^^^^^^^^^^^^^^
 
-* Creates the dockerdo user configuration file (`~/.config/dockerdo/dockerdo.yaml`).
-* Adds the dodo alias to your shell's rc file (`.bashrc`).
-* Adds the dockerdo shell completion to `.bashrc`.
+* Creates the dockerdo user configuration file (``~/.config/dockerdo/dockerdo.yaml``).
+* Adds the dodo alias to your shell's rc file (``.bashrc``).
+* Adds the dockerdo shell completion to ``.bashrc``.
 
 dockerdo init
 ^^^^^^^^^^^^^
 
 * Initializes a new session.
-* Defines the work dir `${WORK_DIR}` on the local host.
-* Mounts the remote host build directory using `sshfs` into `${WORK_DIR}/${REMOTE_HOST}`.
-* To activate the session in the current shell, use `source $(dockerdo init)`.
-  Later, you can use `source ./local/share/dockerdo/${session_name}/activate` to reactivate a persistent session.
+* Defines the work dir ``${WORK_DIR}`` on the local host.
+* Mounts the remote host build directory using ``sshfs`` into ``${WORK_DIR}/${REMOTE_HOST}``.
+* To activate the session in the current shell, use ``source $(dockerdo init)``.
+  Later, you can use ``source ./local/share/dockerdo/${session_name}/activate`` to reactivate a persistent session.
 
 dockerdo overlay
 ^^^^^^^^^^^^^^^^
 
-* Creates `Dockerfile.dockerdo` which overlays a given image, making it dockerdo compatible.
-    * Installs `sshd`.
-    * Copies your ssh key into `authorized_keys` inside the image.
-    * Changes the CMD to start `sshd` and sleep forever.
-* Supports base images using different distributions: `--distro [ubuntu|alpine]`.
+* Creates ``Dockerfile.dockerdo`` which overlays a given image, making it dockerdo compatible.
+
+    * Installs ``sshd``.
+    * Copies your ssh key into ``authorized_keys`` inside the image.
+    * Changes the CMD to start ``sshd`` and sleep forever.
+
+* Supports base images using different distributions: ``--distro [ubuntu|alpine]``.
 
 dockerdo build
 ^^^^^^^^^^^^^^
 
-* Runs `dockerdo overlay`, unless you already have a `Dockerfile.dockerdo`.
-* Runs `docker build` with the overlayed Dockerfile.
-* Supports remote build with the `--remote` flag.
+* Runs ``dockerdo overlay``, unless you already have a ``Dockerfile.dockerdo``.
+* Runs ``docker build`` with the overlayed Dockerfile.
+* Supports remote build with the ``--remote`` flag.
   Note that it is up to you to ensure that the Dockerfile is buildable on the remote host.
 
 dockerdo push
@@ -119,9 +121,9 @@ dockerdo run
 ^^^^^^^^^^^^
 
 * Starts the container on the remote host.
-* Mounts the container filesystem using `sshfs` into `${WORK_DIR}/container`.
-* Accepts the arguments for `docker run`.
-* To record filesystem events, use `dockerdo run --record &`.
+* Mounts the container filesystem using ``sshfs`` into ``${WORK_DIR}/container``.
+* Accepts the arguments for ``docker run``.
+* To record filesystem events, use ``dockerdo run --record &``.
   The command will continue running in the background to record events using inotify.
 
 dockerdo export
@@ -135,8 +137,8 @@ dockerdo exec (alias dodo)
 
 * Executes a command in the running container.
 * The working directory is deduced from the current working directory on the local host.
-  E.g. if you ran `dockerdo init` in `/home/user/project`, and are now in `/home/user/container/opt/mysoftware`,
-  the working directory on the container is `/opt/mysoftware`.
+  E.g. if you ran ``dockerdo init`` in ``/home/user/project``, and are now in ``/home/user/container/opt/mysoftware``,
+  the working directory on the container is ``/opt/mysoftware``.
 * Note that you can pipe text in and out of the command, and the piping happens on the local host.
 
 dockerdo status
@@ -161,54 +163,53 @@ dockerdo rm
 
 * Removes the container.
 * Unmounts the remote host build directory.
-* If you specify the `--delete` flag, the session directory is also deleted.
+* If you specify the ``--delete`` flag, the session directory is also deleted.
 
 Configuration
 -------------
 
-User configuration is in the `~/.config/dockerdo/dockerdo.yaml` file.
+User configuration is in the ``~/.config/dockerdo/dockerdo.yaml`` file.
 
 Step-by-step example of ssh connections
 ---------------------------------------
 
-Let's say your local host is called `london`, and you want to use a remote host called `reykjavik`.
-The `reykjavik` host is listening on the normal ssh port 22.
+Let's say your local host is called ``london``, and you want to use a remote host called ``reykjavik``.
+The ``reykjavik`` host is listening on the normal ssh port 22.
 We start a container, with sshd running on port 22 inside the container.
-When starting the container, we give the `-p 2222:22` argument to `docker run`, so that the container sshd is listening on port 2222 on the host.
-However, the admins of `reykjavik` have blocked port 2222 in the firewall, so we can't connect directly.
-We connect from `london` to `reykjavik` using port 22, and then jump to the container using port 2222 on `reykjavik`.
+When starting the container, we give the ``-p 2222:22`` argument to ``docker run``, so that the container sshd is listening on port 2222 on the host.
+However, the admins of ``reykjavik`` have blocked port 2222 in the firewall, so we can't connect directly.
+We connect from ``london`` to ``reykjavik`` using port 22, and then jump to the container using port 2222 on ``reykjavik``.
 Therefore, the ssh command looks like this:
 
 .. code-block:: bash
 
     ssh -J reykjavik -p 2222 127.0.0.1
 
-You have installed your key in `~/.ssh/authorized_keys` on `reykjavik`, and `dockerdo` will copy it into the container.
-Therefore, you can authenticate without a password both to `reykjavik` and the container.
+You have installed your key in ``~/.ssh/authorized_keys`` on ``reykjavik``, and ``dockerdo`` will copy it into the container.
+Therefore, you can authenticate without a password both to ``reykjavik`` and the container.
 
-If you need to configure a second jump host for `reykjavik`, or any other ssh options, you should add it to the ssh config on `london` like you normally do.
+If you need to configure a second jump host for ``reykjavik``, or any other ssh options, you should add it to the ssh config on ``london`` like you normally do.
 
 
 Caveats
 -------
 
 * **There is no persistent shell environment in the container.**
-  You can **not** set shell env variables using <del> `dodo export VAR=VAL` </del>.
-  Instead, you must set the variables explicitly using either an env list file (Docker `--env-file`),
-  or by setting the variables in a launcher script that you write and place in your image.
-  To help you set up the env list, there is the `dockerdo export` subcommand
+  Instead, you must use the ``dockerdo export`` subcommand.
+  Alternatively, you can set the variables for a particular app in a launcher script that you write and place in your image.
 
     * **Export** is the best approach when you need different values in different container instances launched from the same image,
       and when you need the env variables in multiple different programs. For example, setting the parameters of a benchmark.
     * **A launcher script** is the best approach when you have a single program that requires some env variables,
       and you always want to use the same values. Also the best approach if you have large amounts of data that you want to pass to the program through env variables.
 
-* **`dockerdo history` with recording will only list edits done via the sshfs mount.**
+* **``dockerdo history`` with recording will only list edits done via the sshfs mount.**
   Inotify runs on your local machine, and can only detect filesystem operations that happen locally.
   If you e.g. use your local editor to write a file on the sshfs mount, inotify will detect it.
   However, if a script inside the container writes a file, there is no way for inotify to detect it, because sshfs is not able to relay the events that it listens to from the container to the local host.
 
 * **sshfs mount is not intended to replace docker volumes, you need both.**
+
     * Docker volumes/mounts are still needed for persisting data on the host, after the container is stopped and/or deleted.
       You only mount a specific directory, it doesn't make sense to have the entire container filesystem as a volume.
       Anything outside of the mounted volume is normally not easily accessible from the outside.
@@ -218,10 +219,20 @@ Caveats
       Sshfs doesn't suffer from weird file ownership.
 
 * **git has some quirks with sshfs.**
-    * You will have to set `git config --global --add safe.directory ${GIT_DIR}` to avoid git warnings.
+
+    * You will have to set ``git config --global --add safe.directory ${GIT_DIR}`` to avoid git warnings.
       You don't need to remember this command, git will remind you of it.
     * Some git commands can be slower than normal.
 
-* **network=host in Docker.**
+* **Avoid --network=host in Docker.**
   If you need to use network=host in Docker, you have to run sshd on a different port than 22.
   The standard Dockerfile overlay will not do this for you.
+
+
+Demo image
+----------
+
+Click to enlarge
+
+.. image:: docs/demo.png
+   :width: 100%
