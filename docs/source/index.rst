@@ -14,8 +14,27 @@ Documentation on readthedocs:  `<https://dockerdo.readthedocs.io/en/latest/?vers
    :maxdepth: 2
    :caption: Contents:
 
-   Introduction.rst
+   Installation.rst
+   Concept.rst
+   Commands.rst
+   Configuration.rst
+   SshWalkthrough.rst
+   WouldntItBeNice.rst
+   Caveats.rst
+
+Features
+--------
+
+* Uses ssh for remote execution, allowing seamless proxy jumps all the way from your local machine.
+* Uses sshfs to make the container filesystem as easy to access as your local disk.
  
+Demo image
+----------
+
+Click to enlarge
+
+.. image:: demo.png
+   :width: 100%
 
 
 Indices and tables
