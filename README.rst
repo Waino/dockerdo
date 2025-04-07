@@ -20,6 +20,15 @@ If you love customizing your editor (nvim, emacs, anything goes) and your shell,
 Installation
 ------------
 
+With uv
+
+  .. code-block:: bash
+
+    uv tool install dockerdo
+    dockerdo install
+
+With pip
+
   .. code-block:: bash
 
     pip install dockerdo
@@ -28,8 +37,41 @@ Installation
 Features
 --------
 
-* Uses ssh for remote execution, allowing seamless proxy jumps all the way from your local machine.
-* Uses sshfs to make the container filesystem as easy to access as your local disk.
+1. **Local Development Tools with Remote Power**:
+
+   - Allows developers to use their customized local development environment (editors, shell, GUI tools) while working with containers on remote machines.
+   - This solves the common problem of losing your preferred development setup when working on remote systems.
+
+2. **SSH Integration**:
+
+   - Uses standard SSH for remote execution
+   - Supports SSH proxy jumps for complex network setups
+
+3. **Transparent Filesystem Access**:
+
+   - Uses SSHFS to mount container filesystems locally
+   - Makes remote container files feel like they're on your local disk
+   - Allows using local GUI tools to edit remote files: No need for X11 forwarding for GUI tools
+
+4. **Dockerfile Development Aid**:
+
+   - Tracks file modifications and installation commands
+   - `dockerdo history` command shows relevant commands for Dockerfile creation
+   - Filters out local commands (like `man`, `diff`, `grep`) to keep history clean
+
+5. **Ease of Use**:
+
+   - Simple installation process (`uv` or `pip`)
+   - Bash completion included
+   - Supports different base distributions (Ubuntu, Alpine)
+   - Can work with both local and remote Docker hosts
+
+The tool is aimed towards developers who:
+
+- Have heavily customized development environments
+- Need to work with remote compute resources
+- Want to maintain their workflow while using containers
+- Need to develop and debug Dockerfiles
 
 Concept
 --------
@@ -101,6 +143,11 @@ dockerdo overlay
     * Changes the CMD to start ``sshd`` and sleep forever.
 
 * Supports base images using different distributions: ``--distro [ubuntu|alpine]``.
+* Often you can skip this step, as ``dockerdo build`` will run it automatically.
+  You need to run it manually if:
+
+    * You want to inspect or modify the Dockerfile before building.
+    * You want to recreate the Dockerfile with a different configuration.
 
 dockerdo build
 ^^^^^^^^^^^^^^
@@ -123,6 +170,8 @@ dockerdo run
 * Starts the container on the remote host.
 * Mounts the container filesystem using ``sshfs`` into ``${WORK_DIR}/container``.
 * Accepts the arguments for ``docker run``.
+* Always run this command in the background ``dockerdo run &``.
+  The command will continue running in the background to maintain the master ssh connection.
 * To record filesystem events, use ``dockerdo run --record &``.
   The command will continue running in the background to record events using inotify.
 
