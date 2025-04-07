@@ -213,6 +213,7 @@ dockerdo rm
 * Removes the container.
 * Unmounts the remote host build directory.
 * If you specify the ``--delete`` flag, the session directory is also deleted.
+* Note: if ``dockerdo run`` fails and leaves the session in a bad state, you can use ``dockerdo rm --force`` to clean up.
 
 Configuration
 -------------
@@ -276,6 +277,10 @@ Caveats
 * **Avoid --network=host in Docker.**
   If you need to use network=host in Docker, you have to run sshd on a different port than 22.
   The standard Dockerfile overlay will not do this for you.
+
+* **On slow connections, sshfs can sometimes be slower to update the filesystem than you can run ``dodo`` commands.**
+  This can result in strange behavior, if you try to read the filesystem before it has been updated.
+  If this happens, have patience.
 
 
 Wouldn't it be nice
