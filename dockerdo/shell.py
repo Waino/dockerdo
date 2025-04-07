@@ -218,4 +218,18 @@ def run_ssh_master_process(session: Session, remote_host: str, ssh_port_on_remot
 
 def detect_background() -> bool:
     """Detect if the process is running in the background"""
-    return os.getpgrp() != os.tcgetpgrp(sys.stdout.fileno())
+    try:
+        return os.getpgrp() != os.tcgetpgrp(sys.stdout.fileno())
+    except OSError:
+        return True
+
+
+def detect_ssh_agent() -> bool:
+    """Detect if the ssh agent is running, and there is at least one key in it"""
+    if "SSH_AUTH_SOCK" not in os.environ:
+        return False
+    try:
+        output = check_output(["ssh-add", "-l"])
+        return len(output) > 0
+    except CalledProcessError:
+        return False

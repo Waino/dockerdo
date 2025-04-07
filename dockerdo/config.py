@@ -76,6 +76,7 @@ class Session(BaseModel):
         remote_host_build_dir: Path,
         local_work_dir: Path,
         user_config: UserConfig,
+        dry_run: bool = False,
     ) -> Optional["Session"]:
         """
         Create a Session from command line options.
@@ -84,11 +85,18 @@ class Session(BaseModel):
         Creates the session directory.
         """
         if session_name is None:
-            session_dir = Path(mkdtemp(prefix="dockerdo_"))
-            prettyprint.action(
-                "local", "Created", f"ephemeral session directory {session_dir}"
-            )
-            session_name = session_dir.name.replace("dockerdo_", "")
+            if dry_run:
+                session_dir = Path("/tmp/dockerdo_(filled in by mkdtemp)")
+                prettyprint.action(
+                    "local", "Would create", f"ephemeral session directory {session_dir}"
+                )
+                session_name = "(filled in by mkdtemp)"
+            else:
+                session_dir = Path(mkdtemp(prefix="dockerdo_"))
+                prettyprint.action(
+                    "local", "Created", f"ephemeral session directory {session_dir}"
+                )
+                session_name = session_dir.name.replace("dockerdo_", "")
         else:
             session_dir = Path(f"~/.local/share/dockerdo/{session_name}").expanduser()
             if session_dir.exists():

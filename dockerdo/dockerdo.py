@@ -111,6 +111,7 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
                         f"[[ -f {bash_completion_path} ]] && source {bash_completion_path}\n"
                     )
             task.set_status("OK")
+        prettyprint.info("Remember to restart bash or source ~/.bashrc")
     return 0
 
 
@@ -148,9 +149,12 @@ def init(
     """
     Initialize a dockerdo session.
 
+    You should source the output of this command to activate the session:  source $(dockerdo init)
+
     SESSION_NAME is optional. If not given, an ephemeral session is created.
     """
     set_execution_mode(verbose, dry_run)
+    in_background = detect_background()
     user_config = load_user_config()
     cwd = Path(os.getcwd())
     session = Session.from_opts(
@@ -166,11 +170,15 @@ def init(
         remote_host_build_dir=build_dir,
         local_work_dir=cwd,
         user_config=user_config,
+        dry_run=dry_run,
     )
     if session is None:
         return 1
-    session.save()
-    print(session.write_activate_script())
+    if not dry_run:
+        session.save()
+        if not in_background:
+            prettyprint.info("Remember to source the activate script:")
+        print(session.write_activate_script())
     return 0
 
 
@@ -200,6 +208,8 @@ def _overlay(distro: Optional[str], image: Optional[str], dry_run: bool) -> int:
         with open(dockerfile, "w") as f:
             f.write(dockerfile_content)
         task.set_status("OK")
+    if not dry_run:
+        session.save()
     return 0
 
 
@@ -333,7 +343,11 @@ def run(
     verbose: bool,
     dry_run: bool,
 ) -> int:
-    """Start the container"""
+    """
+    Start the container
+
+    Always run this command backgrounded, by adding an ampersand (&) at the end.
+    """
     in_background = detect_background()
     set_execution_mode(verbose, dry_run)
     session = load_session()
@@ -342,8 +356,9 @@ def run(
     if session.image_tag is None:
         prettyprint.error("Must 'dockerdo build' first")
         return 1
+    verify_container_state(session)
     if session.container_state == "running":
-        prettyprint.error("Container is expected to be already running")
+        prettyprint.error(f"Container {session.container_name} is already running!")
         return 1
     if session.docker_run_args is not None and not no_default_args:
         docker_run_args = session.docker_run_args.split() + docker_run_args
