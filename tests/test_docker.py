@@ -15,7 +15,8 @@ RUN mkdir -p /var/run/sshd \
     && mkdir -p /root/.ssh \
     && chmod 700 /root/.ssh \
     && echo "$SSH_PUB_KEY" > /root/.ssh/authorized_keys \
-    && chmod 600 /root/.ssh/authorized_keys
+    && chmod 600 /root/.ssh/authorized_keys \
+    && ssh-keygen -A
 
 CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D && sleep infinity"]
 """.strip()

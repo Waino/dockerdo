@@ -14,21 +14,26 @@ RUN mkdir -p /var/run/sshd \
     && mkdir -p {homedir}/.ssh \
     && chmod 700 {homedir}/.ssh \
     && echo "$SSH_PUB_KEY" > {homedir}/.ssh/authorized_keys \
-    && chmod 600 {homedir}/.ssh/authorized_keys
+    && chmod 600 {homedir}/.ssh/authorized_keys \
+    && ssh-keygen -A
 
-CMD ["/bin/bash", "-c", "/usr/sbin/sshd -D && sleep infinity"]
+CMD ["{shell}", "-c", "/usr/sbin/sshd -D && sleep infinity"]
 """.strip()
 
 DOCKERFILES = {
     "ubuntu": (
         GENERIC_DOCKERFILE,
         {
-            "package_install": "apt-get update && apt-get install -y openssh-server && rm -rf /var/lib/apt/lists/*"
+            "package_install": "apt-get update && apt-get install -y openssh-server && rm -rf /var/lib/apt/lists/*",
+            "shell": "/bin/bash",
         },
     ),
     "alpine": (
         GENERIC_DOCKERFILE,
-        {"package_install": "apk add openssh-server"},
+        {
+            "package_install": "apk add openssh-server",
+            "shell": "/bin/sh",
+        },
     ),
 }
 DISTROS = list(DOCKERFILES.keys())
