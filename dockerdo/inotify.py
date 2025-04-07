@@ -43,7 +43,8 @@ class InotifyListener:
                             prettyprint.info('Backing filesystem unmounted')
                         return
                     path = self.watch_descriptors[wd] / name
-                    self.session.record_modified_file(path)
+                    if not self.session.record_modified_file(path):
+                        continue
                     self.session.save()
                     if verbose:
                         prettyprint.info(f"Recorded modified file: {path}")

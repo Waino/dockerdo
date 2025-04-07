@@ -155,9 +155,14 @@ class Session(BaseModel):
             json.dump({"cwd": str(path), "command": command}, f)
             f.write("\n")
 
-    def record_modified_file(self, file: Path) -> None:
+    def record_modified_file(self, file: Path) -> bool:
         """Record a file write in the session history"""
+        if file == self.env_file_path:
+            return False
+        if file in self.modified_files:
+            return False
         self.modified_files.add(file)
+        return True
 
     def _update_env(self, key: str, value: str) -> None:
         if len(value.strip()) == 0:
