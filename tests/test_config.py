@@ -22,6 +22,7 @@ def test_session_from_opts_defaults():
             record_inotify=False,
             remote_host_build_dir=Path("."),
             local_work_dir=Path("/obscure/workdir"),
+            remote_delay=0.0,
             user_config=user_config,
         )
     assert session is not None
@@ -38,6 +39,7 @@ def test_session_from_opts_defaults():
     assert session.ssh_port_on_remote_host is None
     assert session.remote_host_build_dir == Path(".")
     assert session.local_work_dir == Path("/obscure/workdir")
+    assert session.remote_delay == 0.0
     assert session.docker_run_args is None
     assert session.modified_files == set()
     assert session.container_state == "nothing"
@@ -85,6 +87,7 @@ def test_session_from_opts_override_all():
             record_inotify=False,
             remote_host_build_dir=Path("/tmp/build"),
             local_work_dir=Path("/another/workdir"),
+            remote_delay=1.0,
             user_config=user_config,
         )
     assert session is not None
@@ -101,6 +104,7 @@ def test_session_from_opts_override_all():
     assert session.ssh_port_on_remote_host is None
     assert session.remote_host_build_dir == Path("/tmp/build")
     assert session.local_work_dir == Path("/another/workdir")
+    assert session.remote_delay == 1.0
     assert session.docker_run_args is None
     assert session.modified_files == set()
     assert session.container_state == "nothing"
@@ -151,6 +155,7 @@ def test_session_from_opts_override_except_user_config():
             record_inotify=False,
             remote_host_build_dir=Path("/tmp/build"),
             local_work_dir=Path("/another/workdir"),
+            remote_delay=0.5,
             user_config=user_config,
         )
     assert session is not None
@@ -167,6 +172,7 @@ def test_session_from_opts_override_except_user_config():
     assert session.ssh_port_on_remote_host is None
     assert session.remote_host_build_dir == Path("/tmp/build")
     assert session.local_work_dir == Path("/another/workdir")
+    assert session.remote_delay == 0.5
     assert session.docker_run_args is None
     assert session.modified_files == set()
     assert session.container_state == "nothing"
@@ -213,6 +219,7 @@ def test_session_env_management():
             record_inotify=False,
             remote_host_build_dir=Path("/tmp/build"),
             local_work_dir=Path("/another/workdir"),
+            remote_delay=0.0,
             user_config=user_config,
         )
 
@@ -258,6 +265,7 @@ def test_session_from_opts_persistent_already_exists():
                 record_inotify=False,
                 remote_host_build_dir=Path("/tmp/build"),
                 local_work_dir=Path("/another/workdir"),
+                remote_delay=0.0,
                 user_config=user_config,
             )
             assert session is None

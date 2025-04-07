@@ -57,6 +57,7 @@ class Session(BaseModel):
     remote_host_build_dir: Path
     local_work_dir: Path
     docker_run_args: Optional[str] = None
+    remote_delay: float = 0.0
 
     modified_files: Set[Path] = set()
     container_state: Literal["nothing", "running", "stopped"] = "nothing"
@@ -75,6 +76,7 @@ class Session(BaseModel):
         record_inotify: bool,
         remote_host_build_dir: Path,
         local_work_dir: Path,
+        remote_delay: float,
         user_config: UserConfig,
         dry_run: bool = False,
     ) -> Optional["Session"]:
@@ -111,6 +113,7 @@ class Session(BaseModel):
         base_image = base_image if base_image is not None else user_config.default_image
         if local:
             remote_host = None
+            remote_delay = 0.0
         else:
             remote_host = (
                 remote_host
@@ -135,6 +138,7 @@ class Session(BaseModel):
             session_dir=session_dir,
             remote_host_build_dir=remote_host_build_dir,
             local_work_dir=local_work_dir,
+            remote_delay=remote_delay,
         )
         return session
 

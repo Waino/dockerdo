@@ -24,6 +24,7 @@ from dockerdo.shell import (
     verify_container_state,
     run_ssh_master_process,
     detect_background,
+    detect_ssh_agent,
 )
 from dockerdo.utils import make_image_tag
 
@@ -130,6 +131,12 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
 @click.option(
     "--build_dir", type=Path, help="Remote host build directory", default=Path(".")
 )
+@click.option(
+    "--remote_delay",
+    type=float,
+    default=0.0,
+    help="Delay to add to all remote commands, to allow slow sshfs to catch up",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def init(
@@ -143,6 +150,7 @@ def init(
     container_username: str,
     registry: Optional[str],
     build_dir: Path,
+    remote_delay: float,
     verbose: bool,
     dry_run: bool,
 ) -> int:
@@ -169,6 +177,7 @@ def init(
         record_inotify=record,
         remote_host_build_dir=build_dir,
         local_work_dir=cwd,
+        remote_delay=remote_delay,
         user_config=user_config,
         dry_run=dry_run,
     )
@@ -333,6 +342,12 @@ def push(verbose: bool, dry_run: bool) -> int:
     "--ssh_port_on_remote_host", type=int, help="container SSH port on remote host"
 )
 @click.option("--record", is_flag=True, help="Record filesystem events")
+@click.option(
+    "--remote_delay",
+    type=float,
+    default=None,
+    help="Delay to add to all remote commands, to allow slow sshfs to catch up",
+)
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def run(
@@ -340,6 +355,7 @@ def run(
     no_default_args: bool,
     ssh_port_on_remote_host: Optional[int],
     record: bool,
+    remote_delay: Optional[float],
     verbose: bool,
     dry_run: bool,
 ) -> int:
@@ -356,6 +372,9 @@ def run(
     if session.image_tag is None:
         prettyprint.error("Must 'dockerdo build' first")
         return 1
+    if not detect_ssh_agent():
+        prettyprint.error("Dockerdo requires an ssh agent. Please start one and add your keys.")
+        return 1
     verify_container_state(session)
     if session.container_state == "running":
         prettyprint.error(f"Container {session.container_name} is already running!")
@@ -367,6 +386,8 @@ def run(
         # TODO: detect a free port
         ssh_port_on_remote_host = 2222
     session.ssh_port_on_remote_host = ssh_port_on_remote_host
+    if remote_delay is not None:
+        session.remote_delay = remote_delay
 
     command = (
         f"docker run -d {docker_run_args_str}"
@@ -504,6 +525,8 @@ def exec(args, verbose: bool, dry_run: bool) -> int:
         return 1
     command = " ".join(args)
     session.write_container_env_file(verbose=verbose)
+    if session.remote_delay > 0.0:
+        time.sleep(session.remote_delay)
     retval, container_work_dir = run_container_command(command=command, session=session)
     if retval != 0:
         return retval

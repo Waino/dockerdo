@@ -281,6 +281,7 @@ Caveats
 * **On slow connections, sshfs can sometimes be slower to update the filesystem than you can run ``dodo`` commands.**
   This can result in strange behavior, if you try to read the filesystem before it has been updated.
   If this happens, have patience.
+  You can use ``--remote_delay`` to help you have patience, by adding a delay to all remote commands.
 
 
 Wouldn't it be nice
