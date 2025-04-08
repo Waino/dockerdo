@@ -269,3 +269,37 @@ def test_session_from_opts_persistent_already_exists():
                 user_config=user_config,
             )
             assert session is None
+
+
+def test_session_dry_run():
+    """Test the Session._update_env method"""
+    user_config = UserConfig(
+        default_remote_host="reykjavik",
+        default_distro="alpine",
+        default_image="alpine:latest",
+        default_docker_registry="docker.io",
+        default_docker_run_args="",
+        always_record_inotify=True,
+    )
+    with mock.patch(
+        "dockerdo.config.Path.expanduser",
+        return_value=Path("/home/user/.local/share/dockerdo/my_session")
+    ):
+        session = Session.from_opts(
+            session_name=None,
+            container_name='my_container',
+            remote_host=None,
+            local=False,
+            distro=None,
+            base_image=None,
+            container_username="alpine",
+            docker_registry=None,
+            record_inotify=False,
+            remote_host_build_dir=Path("/tmp/build"),
+            local_work_dir=Path("/another/workdir"),
+            remote_delay=0.0,
+            user_config=user_config,
+            dry_run=True,
+        )
+        assert session is not None
+        assert session.name == "(filled in by mkdtemp)"
