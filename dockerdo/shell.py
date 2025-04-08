@@ -89,7 +89,25 @@ def run_remote_command(command: str, session: Session) -> int:
     return run_local_command(wrapped_command, cwd=cwd)
 
 
-def run_container_command(command: str, session: Session) -> Tuple[int, Path]:
+def ssh_stdin_flags(interactive: bool, session: Session) -> str:
+    """Get the stdin flags for ssh"""
+    if not sys.stdin.isatty():
+        # Data is being piped into dodo
+        # We can not use the ssh master socket, and shouldn't create a tty
+        return ""
+    else:
+        if interactive:
+            # The user wants to interact with the command
+            # We can not use the ssh master socket, and should create a tty.
+            # Quiet suppresses an annoying log message
+            return "-t -q"
+        else:
+            # Not interactive: we can use the ssh master socket
+            # To make sure that stdin is not used (this would hang), we specify -n
+            return f"-n -S {session.session_dir}/ssh-socket"
+
+
+def run_container_command(command: str, session: Session, interactive: bool = False) -> Tuple[int, Path]:
     """
     Run a command on the container, piping through stdin, stdout, and stderr.
     """
@@ -100,17 +118,18 @@ def run_container_command(command: str, session: Session) -> Tuple[int, Path]:
         )
         return 1, Path()
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
+    flags = ssh_stdin_flags(interactive, session)
     if session.remote_host is None:
         # remote_host is the same as local_host
         wrapped_command = (
-            f"ssh -S {session.session_dir}/ssh-socket"
+            f"ssh {flags}"
             f" -p {session.ssh_port_on_remote_host} {session.container_username}@localhost"
             " -o StrictHostKeyChecking=no"
             f' "source {session.env_file_path} && cd {container_work_dir} && {escaped_command}"'
         )
     else:
         wrapped_command = (
-            f"ssh -S {session.session_dir}/ssh-socket"
+            f"ssh {flags}"
             f" -J {session.remote_host} -p {session.ssh_port_on_remote_host}"
             f" {session.container_username}@{session.remote_host}"
             " -o StrictHostKeyChecking=no"

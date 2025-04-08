@@ -188,7 +188,8 @@ dockerdo exec (alias dodo)
 * The working directory is deduced from the current working directory on the local host.
   E.g. if you ran ``dockerdo init`` in ``/home/user/project``, and are now in ``/home/user/container/opt/mysoftware``,
   the working directory on the container is ``/opt/mysoftware``.
-* Note that you can pipe text in and out of the command, and the piping happens on the local host.
+* You can pipe text in and out of the command, and the piping happens on the local host.
+* Note that stdin is only connected if you pipe text in, or you specify the ``-i/--interactive`` flag.
 
 dockerdo status
 ^^^^^^^^^^^^^^^
@@ -282,6 +283,12 @@ Caveats
   This can result in strange behavior, if you try to read the filesystem before it has been updated.
   If this happens, have patience.
   You can use ``--remote_delay`` to help you have patience, by adding a delay to all remote commands.
+
+* **A flag for interactive mode**
+
+    * Note that stdin is only connected if you pipe text in, or you specify the ``-i/--interactive`` flag.
+    * If you don't specify the flag and the command tries to read from stdin, you'll get an error, e.g. ``EOFError: EOF when reading a line``.
+    * Interactive mode is slightly slower, as it has to work around a bug in ssh preventing the use of the master socket.
 
 
 Wouldn't it be nice

@@ -515,9 +515,10 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
 
 @cli.command(context_settings=dict(ignore_unknown_options=True))
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
+@click.option("-i", "--interactive", is_flag=True, help="Connect stdin for interactive commands")
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
-def exec(args, verbose: bool, dry_run: bool) -> int:
+def exec(args, interactive: bool, verbose: bool, dry_run: bool) -> int:
     """Execute a command in the container"""
     set_execution_mode(verbose, dry_run)
     session = load_session()
@@ -527,7 +528,7 @@ def exec(args, verbose: bool, dry_run: bool) -> int:
     session.write_container_env_file(verbose=verbose)
     if session.remote_delay > 0.0:
         time.sleep(session.remote_delay)
-    retval, container_work_dir = run_container_command(command=command, session=session)
+    retval, container_work_dir = run_container_command(command=command, session=session, interactive=interactive)
     if retval != 0:
         return retval
     session.record_command(command, container_work_dir)
