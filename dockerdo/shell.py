@@ -72,10 +72,11 @@ def make_remote_command(command: str, session: Session) -> str:
     """
     Wrap a command in ssh to run on the remote host.
     """
+    escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
     wrapped_command = (
         f"ssh -S {session.session_dir}/ssh-socket"
         f" {session.remote_host}"
-        f' "cd {session.remote_host_build_dir} && {shlex.quote(command)}"'
+        f' "cd {session.remote_host_build_dir} && {escaped_command}"'
     )
     return wrapped_command
 

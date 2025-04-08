@@ -261,14 +261,31 @@ def build(remote: bool, verbose: bool, dry_run: bool) -> int:
     with open(user_config.ssh_key_path, "r") as f:
         ssh_key = f.read().strip()
 
-    build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile} ."
     if remote:
+        build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile.name} ."
+        assert session.sshfs_remote_mount_point is not None
+        destination = session.sshfs_remote_mount_point / "Dockerfile"
+        with prettyprint.LongAction(
+            host="remote",
+            running_verb="Copying",
+            done_verb="Copied" if not dry_run else "Would copy",
+            running_message=f"Dockerfile {dockerfile} to {destination}",
+        ) as task:
+            # copy the Dockerfile to the remote host
+            if not dry_run:
+                with open(dockerfile, "r") as fin:
+                    with open(destination, "w") as fout:
+                        fout.write(fin.read())
+                # sleep to allow sshfs to catch up
+                time.sleep(max(1.0, session.remote_delay))
+            task.set_status("OK")
         with prettyprint.LongAction(
             host="remote",
             running_verb="Building",
             done_verb="Built" if not dry_run else "Would build",
             running_message=f"image {session.image_tag} on {session.remote_host}",
         ) as task:
+            # build the image on the remote host
             retval = run_remote_command(
                 build_cmd,
                 session,
@@ -278,6 +295,7 @@ def build(remote: bool, verbose: bool, dry_run: bool) -> int:
             else:
                 return retval
     else:
+        build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile} ."
         with prettyprint.LongAction(
             host="local",
             running_verb="Building",
