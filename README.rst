@@ -66,6 +66,13 @@ Features
    - Supports different base distributions (Ubuntu, Alpine)
    - Can work with both local and remote Docker hosts
 
+6. **Better response to latency**:
+
+   - Over a slow connection, working normally over ssh causes user interface lag in the shell and TUI:
+     it takes a moment for the remote host to respond to each keypress.
+   - In a dockerdo workflow, feedback for keypresses is instant, as you are using the local shell and tools.
+   - You still have to wait for commands to finish, but the user interface doesn't feel like molasses.
+
 The tool is aimed towards developers who:
 
 - Have heavily customized development environments
@@ -280,9 +287,10 @@ Caveats
   The standard Dockerfile overlay will not do this for you.
 
 * **On slow connections, sshfs can sometimes be slower to update the filesystem than you can run ``dodo`` commands.**
-  This can result in strange behavior, if you try to read the filesystem before it has been updated.
+  This can result in strange behavior, if you try to read the filesystem before it has been updated (e.g. files look empty or truncated).
   If this happens, have patience.
-  You can use ``--remote_delay`` to help you have patience, by adding a delay to all remote commands.
+  You can use ``--remote_delay`` to help you have patience, by adding a delay to all remote commands:
+  you can type as fast as you want, and the delay will be handled automatically for you.
 
 * **A flag for interactive mode**
 
