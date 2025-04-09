@@ -9,7 +9,7 @@ import time
 from contextlib import nullcontext, AbstractContextManager
 from pathlib import Path
 from subprocess import Popen
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 from dockerdo import prettyprint
 from dockerdo.config import UserConfig, Session
@@ -349,42 +349,22 @@ def push(verbose: bool, dry_run: bool) -> int:
     return 0
 
 
-@cli.command(context_settings=dict(ignore_unknown_options=True))
-@click.argument("docker_run_args", nargs=-1, type=click.UNPROCESSED)
-@click.option(
-    "--no-default-args",
-    is_flag=True,
-    help="Do not add default arguments from user config",
-)
-@click.option(
-    "--ssh_port_on_remote_host", type=int, help="container SSH port on remote host"
-)
-@click.option("--record", is_flag=True, help="Record filesystem events")
-@click.option(
-    "--remote_delay",
-    type=float,
-    default=None,
-    help="Delay to add to all remote commands, to allow slow sshfs to catch up",
-)
-@click.option("-v", "--verbose", is_flag=True, help="Print commands")
-@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
-def run(
-    docker_run_args: List[str],
-    no_default_args: bool,
-    ssh_port_on_remote_host: Optional[int],
+def run_or_start(
+    docker_command: Literal["run", "start"],
+    docker_args: List[str],
     record: bool,
     remote_delay: Optional[float],
     verbose: bool,
     dry_run: bool,
+    session: Session,
 ) -> int:
     """
-    Start the container
+    Either run (create and start) or start the container
 
     Always run this command backgrounded, by adding an ampersand (&) at the end.
     """
     in_background = detect_background()
     set_execution_mode(verbose, dry_run)
-    session = load_session()
     if session is None:
         return 1
     if session.image_tag is None:
@@ -397,21 +377,20 @@ def run(
     if session.container_state == "running":
         prettyprint.error(f"Container {session.container_name} is already running!")
         return 1
-    if session.docker_run_args is not None and not no_default_args:
-        docker_run_args = session.docker_run_args.split() + docker_run_args
-    docker_run_args_str = " ".join(docker_run_args)
-    if ssh_port_on_remote_host is None:
-        # TODO: detect a free port
-        ssh_port_on_remote_host = 2222
-    session.ssh_port_on_remote_host = ssh_port_on_remote_host
+    docker_args_str = " ".join(docker_args)
     if remote_delay is not None:
         session.remote_delay = remote_delay
+    ssh_port_on_remote_host = session.ssh_port_on_remote_host if session.ssh_port_on_remote_host is not None else 2222
 
-    command = (
-        f"docker run -d {docker_run_args_str}"
-        f" -p {ssh_port_on_remote_host}:22 "
-        f" --name {session.container_name} {session.image_tag}"
-    )
+    if docker_command == "run":
+        command = (
+            f"docker run -d {docker_args_str}"
+            f" -p {ssh_port_on_remote_host}:22 "
+            f" --name {session.container_name} {session.image_tag}"
+        )
+    else:  # start
+        command = f"docker start {docker_args_str} {session.container_name}"
+
     ctx_mgr: AbstractContextManager
     if in_background:
         ctx_mgr = nullcontext()
@@ -505,6 +484,104 @@ def run(
     else:
         ssh_master_process.wait()
     return 0
+
+
+@cli.command(context_settings=dict(ignore_unknown_options=True))
+@click.argument("docker_run_args", nargs=-1, type=click.UNPROCESSED)
+@click.option(
+    "--no-default-args",
+    is_flag=True,
+    help="Do not add default arguments from user config",
+)
+@click.option(
+    "--ssh_port_on_remote_host", type=int, help="container SSH port on remote host"
+)
+@click.option("--record", is_flag=True, help="Record filesystem events")
+@click.option(
+    "--remote_delay",
+    type=float,
+    default=None,
+    help="Delay to add to all remote commands, to allow slow sshfs to catch up",
+)
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def run(
+    docker_run_args: List[str],
+    no_default_args: bool,
+    ssh_port_on_remote_host: Optional[int],
+    record: bool,
+    remote_delay: Optional[float],
+    verbose: bool,
+    dry_run: bool,
+) -> int:
+    """
+    Run (create and start) the container
+
+    Accepts the arguments for `docker run`.
+
+    Always run this command backgrounded, by adding an ampersand (&) at the end.
+    """
+    session = load_session()
+    if session is None:
+        return 1
+    if session.docker_run_args is not None and not no_default_args:
+        docker_run_args = session.docker_run_args.split() + docker_run_args
+    if ssh_port_on_remote_host is None:
+        # TODO: detect a free port
+        ssh_port_on_remote_host = 2222
+    session.ssh_port_on_remote_host = ssh_port_on_remote_host
+    return run_or_start(
+        docker_command="run",
+        docker_args=docker_run_args,
+        record=record,
+        remote_delay=remote_delay,
+        verbose=verbose,
+        dry_run=dry_run,
+        session=session,
+    )
+
+
+@cli.command(context_settings=dict(ignore_unknown_options=True))
+@click.argument("docker_start_args", nargs=-1, type=click.UNPROCESSED)
+@click.option("--record", is_flag=True, help="Record filesystem events")
+@click.option(
+    "--remote_delay",
+    type=float,
+    default=None,
+    help="Delay to add to all remote commands, to allow slow sshfs to catch up",
+)
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def start(
+    docker_start_args: List[str],
+    record: bool,
+    remote_delay: Optional[float],
+    verbose: bool,
+    dry_run: bool,
+) -> int:
+    """
+    Start a previously stopped container
+
+    Accepts the arguments for `docker start`.
+
+    Always run this command backgrounded, by adding an ampersand (&) at the end.
+    """
+    session = load_session()
+    if session is None:
+        return 1
+    if session.container_state != "stopped":
+        prettyprint.error(f"Expecting a stopped container {session.container_name}")
+        return 1
+
+    return run_or_start(
+        docker_command="start",
+        docker_args=docker_start_args,
+        record=record,
+        remote_delay=remote_delay,
+        verbose=verbose,
+        dry_run=dry_run,
+        session=session,
+    )
 
 
 @cli.command()
