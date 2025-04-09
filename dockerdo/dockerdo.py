@@ -618,7 +618,14 @@ def status(verbose: bool, dry_run: bool) -> int:
                 f"Container filesystem not mounted at {sshfs_container_mount_point}"
             )
 
-    # Check status of SSH socket
+    # Check status of SSH sockets
+    if session.remote_host is not None:
+        if os.path.exists(session.session_dir / "ssh-socket-remote"):
+            prettyprint.info(f"SSH socket to remote host found at {session.session_dir}/ssh-socket-remote")
+        else:
+            prettyprint.warning(
+                f"SSH socket to remote host not found at {session.session_dir}/ssh-socket-remote"
+            )
     if session.container_state == "running":
         if os.path.exists(session.session_dir / "ssh-socket-container"):
             prettyprint.info(f"SSH socket to container found at {session.session_dir}/ssh-socket-container")

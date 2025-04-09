@@ -228,12 +228,15 @@ class Session(BaseModel):
         result.append(f"export DOCKERDO_SESSION_NAME={self.name}\n")
         result.append("function deactivate_dockerdo { unset DOCKERDO_SESSION_DIR; unset DOCKERDO_SESSION_NAME; }\n")
 
-        # Mount remote host build directory if using remote host
         if self.remote_host is not None:
+            # Mount remote host build directory if using remote host
             result.append(f"mkdir -p {self.sshfs_remote_mount_point}\n")
             result.append(
                 f"sshfs {self.remote_host}:{self.remote_host_build_dir} {self.sshfs_remote_mount_point}\n"
             )
+            # Create a socket for ssh master connection to the remote host
+            result.append(f"ssh -M -N -S {self.session_dir}/ssh-socket-remote {self.remote_host} &\n")
+
         result.append("set +x\n")
         return "".join(result)
 

@@ -121,6 +121,7 @@ export DOCKERDO_SESSION_NAME=my_session
 function deactivate_dockerdo { unset DOCKERDO_SESSION_DIR; unset DOCKERDO_SESSION_NAME; }
 mkdir -p /another/workdir/reno
 sshfs reno:/tmp/build /another/workdir/reno
+ssh -M -N -S /home/user/.local/share/dockerdo/my_session/ssh-socket-remote reno &
 set +x
 """.lstrip()
 

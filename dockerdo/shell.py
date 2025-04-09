@@ -73,10 +73,10 @@ def make_remote_command(command: str, session: Session) -> str:
     Wrap a command in ssh to run on the remote host.
     """
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
-    # TODO: there is not yet any background process at this stage
-    # flags = f"-n -S {session.session_dir}/ssh-socket-remote"
+    # ssh-socket-remote created when activating the session
     wrapped_command = (
         "ssh"
+        f" -n -S {session.session_dir}/ssh-socket-remote"
         f" {session.remote_host}"
         f' "cd {session.remote_host_build_dir} && {escaped_command}"'
     )
@@ -85,7 +85,8 @@ def make_remote_command(command: str, session: Session) -> str:
 
 def run_remote_command(command: str, session: Session) -> int:
     """
-    Run a command on the remote host, piping through stdin, stdout, and stderr.
+    Run a command on the remote host, piping through stdout, and stderr.
+    Stdin is not connected.
     """
     wrapped_command = make_remote_command(command, session)
     cwd = Path(os.getcwd())
