@@ -73,8 +73,10 @@ def make_remote_command(command: str, session: Session) -> str:
     Wrap a command in ssh to run on the remote host.
     """
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
+    # TODO: there is not yet any background process at this stage
+    # flags = f"-n -S {session.session_dir}/ssh-socket-remote"
     wrapped_command = (
-        f"ssh -S {session.session_dir}/ssh-socket"
+        "ssh"
         f" {session.remote_host}"
         f' "cd {session.remote_host_build_dir} && {escaped_command}"'
     )
@@ -105,7 +107,7 @@ def ssh_stdin_flags(interactive: bool, session: Session) -> str:
         else:
             # Not interactive: we can use the ssh master socket
             # To make sure that stdin is not used (this would hang), we specify -n
-            return f"-n -S {session.session_dir}/ssh-socket"
+            return f"-n -S {session.session_dir}/ssh-socket-container"
 
 
 def run_container_command(command: str, session: Session, interactive: bool = False) -> Tuple[int, Path]:
@@ -124,14 +126,17 @@ def run_container_command(command: str, session: Session, interactive: bool = Fa
         # remote_host is the same as local_host
         wrapped_command = (
             f"ssh {flags}"
-            f" -p {session.ssh_port_on_remote_host} {session.container_username}@localhost"
+            f" -p {session.ssh_port_on_remote_host}"
+            f" {session.container_username}@localhost"
             " -o StrictHostKeyChecking=no"
             f' "source {session.env_file_path} && cd {container_work_dir} && {escaped_command}"'
         )
     else:
+        # remote_host is different from local_host, so jump via remote_host to container
         wrapped_command = (
             f"ssh {flags}"
-            f" -J {session.remote_host} -p {session.ssh_port_on_remote_host}"
+            f" -J {session.remote_host}"
+            f" -p {session.ssh_port_on_remote_host}"
             f" {session.container_username}@{session.remote_host}"
             " -o StrictHostKeyChecking=no"
             f' "source {session.env_file_path} && cd {container_work_dir} && {escaped_command}"'
@@ -218,8 +223,12 @@ def verify_container_state(session: Session) -> bool:
 
 def run_ssh_master_process(session: Session, remote_host: str, ssh_port_on_remote_host: int) -> Optional[Popen]:
     """Runs an ssh command with the -M option to create a master connection. This will run indefinitely."""
+    if session.remote_host is None:
+        jump_flag = ""
+    else:
+        jump_flag = f"-J {session.remote_host}"
     command = (
-        f"ssh -M -N -S {session.session_dir}/ssh-socket -p {ssh_port_on_remote_host}"
+        f"ssh {jump_flag} -M -N -S {session.session_dir}/ssh-socket-container -p {ssh_port_on_remote_host}"
         f" {session.container_username}@{remote_host} -o StrictHostKeyChecking=no"
     )
     if verbose:

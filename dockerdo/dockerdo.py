@@ -264,7 +264,7 @@ def build(remote: bool, verbose: bool, dry_run: bool) -> int:
     if remote:
         build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile.name} ."
         assert session.sshfs_remote_mount_point is not None
-        destination = session.sshfs_remote_mount_point / "Dockerfile"
+        destination = session.sshfs_remote_mount_point / dockerfile.name
         with prettyprint.LongAction(
             host="remote",
             running_verb="Copying",
@@ -454,7 +454,7 @@ def run(
         )
         # sleep to wait for the ssh master process to start
         time.sleep(2)
-        if task and os.path.exists(session.session_dir / "ssh-socket"):
+        if task and os.path.exists(session.session_dir / "ssh-socket-container"):
             task.set_status("OK")
         if dry_run:
             task.set_status("OK")
@@ -620,11 +620,11 @@ def status(verbose: bool, dry_run: bool) -> int:
 
     # Check status of SSH socket
     if session.container_state == "running":
-        if os.path.exists(session.session_dir / "ssh-socket"):
-            prettyprint.info(f"SSH socket found at {session.session_dir}/ssh-socket")
+        if os.path.exists(session.session_dir / "ssh-socket-container"):
+            prettyprint.info(f"SSH socket to container found at {session.session_dir}/ssh-socket-container")
         else:
             prettyprint.warning(
-                f"SSH socket not found at {session.session_dir}/ssh-socket"
+                f"SSH socket to container not found at {session.session_dir}/ssh-socket-container"
             )
 
     prettyprint.container_status(session.container_state)
