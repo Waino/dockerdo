@@ -869,6 +869,21 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
             task.set_status("OK")
 
     if delete:
+        # Delete the image
+        if session.image_tag is not None:
+            with prettyprint.LongAction(
+                host="local",
+                running_verb="Deleting",
+                done_verb="Deleted" if not dry_run else "Would delete",
+                running_message=f"image {session.image_tag}",
+            ) as task:
+                retval = run_local_command(
+                    f"docker rmi {session.image_tag}", cwd=session.local_work_dir, silent=True
+                )
+                if retval != 0:
+                    return retval
+                task.set_status("OK")
+
         # Delete session directory
         with prettyprint.LongAction(
             host="local",
@@ -878,7 +893,9 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
         ) as task:
             if not dry_run:
                 # delete the expected directory contents first
-                for file_name in ["activate", "command_history.jsonl", "env.list", "session.yaml"]:
+                for file_name in [
+                    "activate", "command_history.jsonl", "env.list", "modified_files", "session.yaml"
+                ]:
                     file_path = session.session_dir / file_name
                     if file_path.exists():
                         file_path.unlink()
@@ -895,20 +912,6 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
             else:
                 task.set_status("OK")
 
-        # Delete the image
-        if session.image_tag is not None:
-            with prettyprint.LongAction(
-                host="local",
-                running_verb="Deleting",
-                done_verb="Deleted" if not dry_run else "Would delete",
-                running_message=f"image {session.image_tag}",
-            ) as task:
-                retval = run_local_command(
-                    f"docker rmi {session.image_tag}", cwd=session.local_work_dir, silent=True
-                )
-                if retval != 0:
-                    return retval
-                task.set_status("OK")
     if session.remote_host is not None:
         prettyprint.info("Remember to foreground and close the ssh master process")
     prettyprint.info("Remember to call deactivate_dockerdo")
