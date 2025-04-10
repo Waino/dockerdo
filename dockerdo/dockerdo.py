@@ -331,19 +331,39 @@ def push(verbose: bool, dry_run: bool) -> int:
         return 1
 
     if session.docker_registry is not None:
-        run_local_command(
-            f"docker push {session.image_tag}", cwd=session.local_work_dir
-        )
+        with prettyprint.LongAction(
+            host="remote",
+            running_verb="Pushing",
+            done_verb="Pushed" if not dry_run else "Would push",
+            running_message=f"image {session.image_tag}",
+        ) as task:
+            retval = run_local_command(
+                f"docker push {session.image_tag}", cwd=session.local_work_dir
+            )
+            if retval != 0:
+                return retval
+            task.set_status("OK")
     elif session.remote_host is not None:
         sshfs_remote_mount_point = session.sshfs_remote_mount_point
         assert sshfs_remote_mount_point is not None
-        run_docker_save_pipe(
-            session.image_tag,
-            local_work_dir=session.local_work_dir,
-            sshfs_remote_mount_point=sshfs_remote_mount_point,
-        )
-        remote_path = session.remote_host_build_dir / f"{session.name}.tar.gz"
-        run_remote_command(f"pigz -d {remote_path} | docker load", session)
+        with prettyprint.LongAction(
+            host="remote",
+            running_verb="Saving",
+            done_verb="Saved" if not dry_run else "Would save",
+            running_message=f"image {session.image_tag}",
+        ) as task:
+            retval = run_docker_save_pipe(
+                session.image_tag,
+                local_work_dir=session.local_work_dir,
+                sshfs_remote_mount_point=sshfs_remote_mount_point,
+            )
+            if retval != 0:
+                return retval
+            remote_path = session.remote_host_build_dir / f"{session.name}.tar.gz"
+            retval = run_remote_command(f"pigz -d {remote_path} | docker load", session)
+            if retval != 0:
+                return retval
+            task.set_status("OK")
     else:
         prettyprint.warning(
             "No docker registry or remote host configured. Not pushing image."
