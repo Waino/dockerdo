@@ -129,10 +129,10 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
 )
 @click.option("--registry", type=str, help="Docker registry", default=None)
 @click.option(
-    "--build_dir", type=Path, help="Remote host build directory", default=Path(".")
+    "--build-dir", type=Path, help="Remote host build directory", default=Path(".")
 )
 @click.option(
-    "--remote_delay",
+    "--remote-delay",
     type=float,
     default=0.0,
     help="Delay to add to all remote commands, to allow slow sshfs to catch up",
@@ -504,11 +504,11 @@ def run_or_start(
     help="Do not add default arguments from user config",
 )
 @click.option(
-    "--ssh_port_on_remote_host", type=int, help="container SSH port on remote host"
+    "--ssh-port-on-remote-host", type=int, help="container SSH port on remote host"
 )
 @click.option("--record", is_flag=True, help="Record filesystem events")
 @click.option(
-    "--remote_delay",
+    "--remote-delay",
     type=float,
     default=None,
     help="Delay to add to all remote commands, to allow slow sshfs to catch up",
@@ -555,7 +555,7 @@ def run(
 @click.argument("docker_start_args", nargs=-1, type=click.UNPROCESSED)
 @click.option("--record", is_flag=True, help="Record filesystem events")
 @click.option(
-    "--remote_delay",
+    "--remote-delay",
     type=float,
     default=None,
     help="Delay to add to all remote commands, to allow slow sshfs to catch up",
