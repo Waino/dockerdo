@@ -118,7 +118,7 @@ def test_session_from_opts_override_all():
 set -x
 export DOCKERDO_SESSION_DIR=/home/user/.local/share/dockerdo/my_session
 export DOCKERDO_SESSION_NAME=my_session
-function deactivate_dockerdo { unset DOCKERDO_SESSION_DIR; unset DOCKERDO_SESSION_NAME; }
+function deactivate_dockerdo { unset DOCKERDO_SESSION_DIR; unset DOCKERDO_SESSION_NAME; fusermount -u /another/workdir/reno; }
 mkdir -p /another/workdir/reno
 sshfs reno:/tmp/build /another/workdir/reno
 ssh -M -N -S /home/user/.local/share/dockerdo/my_session/ssh-socket-remote reno &

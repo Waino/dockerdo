@@ -475,7 +475,10 @@ def run_or_start(
             inotify_listener.register_listeners()
             if not in_background:
                 prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
-            inotify_listener.listen(verbose=verbose)
+            try:
+                inotify_listener.listen(verbose=verbose)
+            except OSError as e:
+                prettyprint.error(f"No longer listening to filesystem events due to error: {e}")
         else:
             prettyprint.info("Would record filesystem events")
 
@@ -735,6 +738,20 @@ def stop(verbose: bool, dry_run: bool) -> int:
     if session is None:
         return 1
 
+    # unmount container filesystem
+    if session.sshfs_container_mount_point.is_mount():
+        with prettyprint.LongAction(
+            host="local",
+            running_verb="Unmounting",
+            done_verb="Unmounted" if not dry_run else "Would unmount",
+            running_message="container filesystem",
+        ) as task:
+            run_local_command(
+                f"fusermount -u {session.sshfs_container_mount_point}",
+                cwd=session.local_work_dir,
+            )
+            task.set_status("OK")
+
     command = f"docker stop {session.container_name}"
     with prettyprint.LongAction(
         host="container",
@@ -848,6 +865,8 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
                     print(file)
                 task.set_status("ERROR")
                 return 1
+    if session.remote_host is not None:
+        prettyprint.info("Remember to foreground and close the ssh master process")
     prettyprint.info("Remember to call deactivate_dockerdo")
     return 0
 
