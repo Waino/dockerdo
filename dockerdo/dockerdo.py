@@ -744,7 +744,7 @@ def status(verbose: bool, dry_run: bool) -> int:
     prettyprint.container_status(session.container_state)
     prettyprint.info("Session status:")
     rich.print(
-        session.model_dump_yaml(exclude={"modified_files", "container_state"}),
+        session.model_dump_yaml(exclude={"container_state"}),
         file=sys.stderr,
     )
     session.save()
@@ -810,7 +810,7 @@ def history(verbose: bool, dry_run: bool) -> int:
             print(f"{key}={value}")
     if session.record_inotify:
         prettyprint.info("Modified files:")
-        for file in session.modified_files:
+        for file in session.get_modified_files():
             print(file)
     else:
         prettyprint.info("Recording of modified files is disabled")

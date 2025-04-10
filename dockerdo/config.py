@@ -6,7 +6,7 @@ from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
 from pydantic import Field, ConfigDict
 from tempfile import mkdtemp
-from typing import Optional, Set, Literal, Dict, List
+from typing import Optional, Literal, Dict, List
 
 from dockerdo.utils import ephemeral_container_name
 from dockerdo import prettyprint
@@ -59,7 +59,6 @@ class Session(BaseModel):
     docker_run_args: Optional[str] = None
     remote_delay: float = 0.0
 
-    modified_files: Set[Path] = set()
     container_state: Literal["nothing", "running", "stopped"] = "nothing"
 
     @classmethod
@@ -163,9 +162,16 @@ class Session(BaseModel):
         """Record a file write in the session history"""
         if file == self.env_file_path:
             return False
-        if file in self.modified_files:
+        modified_files_path = self.session_dir / "modified_files"
+        if modified_files_path.exists():
+            with open(modified_files_path, "r") as f:
+                modified_files = {Path(line.strip()) for line in f}
+        else:
+            modified_files = set()
+        if file in modified_files:
             return False
-        self.modified_files.add(file)
+        with open(modified_files_path, "a") as fout:
+            fout.write(f"{file}\n")
         return True
 
     def _update_env(self, key: str, value: str) -> None:
@@ -269,6 +275,12 @@ class Session(BaseModel):
                 except json.JSONDecodeError:
                     pass
             return history
+
+    def get_modified_files(self) -> List[Path]:
+        """Get the list of modified files"""
+        with open(self.session_dir / "modified_files", "r") as f:
+            modified_files = {Path(line.strip()) for line in f}
+        return list(sorted(modified_files))
 
     def write_container_env_file(self, verbose: bool = False) -> None:
         """Write the container env file to a file inside the container"""

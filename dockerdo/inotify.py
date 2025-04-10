@@ -35,7 +35,6 @@ class InotifyListener:
         while self.session.container_state == "running":
             for event in self.inotify.read(timeout=5000):
                 try:
-                    self.session = Session.load(self.session.session_dir)
                     wd, mask, cookie, name = event
                     if mask & flags.UNMOUNT:
                         # Backing filesystem unmounted
@@ -45,9 +44,9 @@ class InotifyListener:
                     path = self.watch_descriptors[wd] / name
                     if not self.session.record_modified_file(path):
                         continue
-                    self.session.save()
                     if verbose:
                         prettyprint.info(f"Recorded modified file: {path}")
                 except KeyError:
                     pass
+            # Reload the session to update the container state
             self.session = Session.load(self.session.session_dir)

@@ -41,7 +41,6 @@ def test_session_from_opts_defaults():
     assert session.local_work_dir == Path("/obscure/workdir")
     assert session.remote_delay == 0.0
     assert session.docker_run_args is None
-    assert session.modified_files == set()
     assert session.container_state == "nothing"
 
     assert session.get_homedir() == Path("/root")
@@ -106,7 +105,6 @@ def test_session_from_opts_override_all():
     assert session.local_work_dir == Path("/another/workdir")
     assert session.remote_delay == 1.0
     assert session.docker_run_args is None
-    assert session.modified_files == set()
     assert session.container_state == "nothing"
 
     assert session.get_homedir() == Path("/home/ubuntu")
@@ -175,7 +173,6 @@ def test_session_from_opts_override_except_user_config():
     assert session.local_work_dir == Path("/another/workdir")
     assert session.remote_delay == 0.5
     assert session.docker_run_args is None
-    assert session.modified_files == set()
     assert session.container_state == "nothing"
 
     assert session.get_homedir() == Path("/home/alpine")
