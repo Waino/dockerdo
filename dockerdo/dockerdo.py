@@ -258,6 +258,9 @@ def build(remote: bool, verbose: bool, dry_run: bool) -> int:
     # Read SSH key content
     # This approach avoids the limitation of Docker build context
     # while still securely injecting the SSH key into the image during build time
+    if not user_config.ssh_key_path.exists():
+        prettyprint.error(f"SSH key not found at {user_config.ssh_key_path}")
+        return 1
     with open(user_config.ssh_key_path, "r") as f:
         ssh_key = f.read().strip()
 
