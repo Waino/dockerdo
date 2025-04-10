@@ -830,6 +830,7 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
     session = load_session()
     if session is None:
         return 1
+    verify_container_state(session)
 
     if session.remote_host is not None:
         # Unmount remote host build directory
@@ -839,7 +840,7 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
             with prettyprint.LongAction(
                 host="local",
                 running_verb="Unmounting",
-                done_verb="Unmounted",
+                done_verb="Unmounted" if not dry_run else "Would unmount",
                 running_message="remote host build directory",
             ) as task:
                 run_local_command(
@@ -848,46 +849,66 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
                 )
                 task.set_status("OK")
 
-    force_flag = "-f" if force else ""
-    command = f"docker rm {force_flag} {session.container_name}"
-    with prettyprint.LongAction(
-        host="container",
-        running_verb="Removing",
-        done_verb="Removed",
-        running_message=f"container {session.container_name}",
-    ) as task:
-        if session.remote_host is None:
-            retval = run_local_command(command, cwd=session.local_work_dir, silent=True)
-        else:
-            retval = run_remote_command(command, session)
-        if retval != 0:
-            return retval
-        session.container_state = "nothing"
-        session.save()
-        task.set_status("OK")
+    if session.container_state != "nothing":
+        force_flag = "-f" if force else ""
+        command = f"docker rm {force_flag} {session.container_name}"
+        with prettyprint.LongAction(
+            host="container",
+            running_verb="Removing",
+            done_verb="Removed" if not dry_run else "Would remove",
+            running_message=f"container {session.container_name}",
+        ) as task:
+            if session.remote_host is None:
+                retval = run_local_command(command, cwd=session.local_work_dir, silent=True)
+            else:
+                retval = run_remote_command(command, session)
+            if retval != 0:
+                return retval
+            session.container_state = "nothing"
+            session.save()
+            task.set_status("OK")
 
     if delete:
+        # Delete session directory
         with prettyprint.LongAction(
             host="local",
             running_verb="Deleting",
-            done_verb="Deleted",
+            done_verb="Deleted" if not dry_run else "Would delete",
             running_message=f"session directory {session.session_dir}",
         ) as task:
-            # delete the expected directory contents first
-            for file_name in ["activate", "command_history.jsonl", "env.list", "session.yaml"]:
-                file_path = session.session_dir / file_name
-                if file_path.exists():
-                    file_path.unlink()
-            # Now the directory should be empty, so we can delete it
-            try:
-                session.session_dir.rmdir()
+            if not dry_run:
+                # delete the expected directory contents first
+                for file_name in ["activate", "command_history.jsonl", "env.list", "session.yaml"]:
+                    file_path = session.session_dir / file_name
+                    if file_path.exists():
+                        file_path.unlink()
+                # Now the directory should be empty, so we can delete it
+                try:
+                    session.session_dir.rmdir()
+                    task.set_status("OK")
+                except OSError:
+                    prettyprint.error(f"There are extraneous files in {session.session_dir}")
+                    for file in session.session_dir.iterdir():
+                        print(file)
+                    task.set_status("ERROR")
+                    return 1
+            else:
                 task.set_status("OK")
-            except OSError:
-                prettyprint.error(f"There are extraneous files in {session.session_dir}")
-                for file in session.session_dir.iterdir():
-                    print(file)
-                task.set_status("ERROR")
-                return 1
+
+        # Delete the image
+        if session.image_tag is not None:
+            with prettyprint.LongAction(
+                host="local",
+                running_verb="Deleting",
+                done_verb="Deleted" if not dry_run else "Would delete",
+                running_message=f"image {session.image_tag}",
+            ) as task:
+                retval = run_local_command(
+                    f"docker rmi {session.image_tag}", cwd=session.local_work_dir, silent=True
+                )
+                if retval != 0:
+                    return retval
+                task.set_status("OK")
     if session.remote_host is not None:
         prettyprint.info("Remember to foreground and close the ssh master process")
     prettyprint.info("Remember to call deactivate_dockerdo")
