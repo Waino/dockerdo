@@ -171,7 +171,10 @@ def parse_docker_ps_output(output: str) -> Optional[str]:
     """Helper to parse docker ps output"""
     if len(output) == 0:
         return None
-    return json.loads(output).get("State", None)
+    state = json.loads(output).get("State", None)
+    if state is None:
+        return None
+    return str(state)
 
 
 def determine_acceptable_container_state(

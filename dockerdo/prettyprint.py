@@ -6,7 +6,7 @@ from rich.text import Text
 from typing import Union
 from rich.console import Console
 from rich.live import Live
-from typing import Literal, Optional, List, Dict
+from typing import Literal, Optional, List, Dict, Any
 
 Host = Literal["local", "remote", "container"]
 ActionStatus = Literal["RUNNING", "OK", "WARN", "FAIL"]
@@ -115,28 +115,29 @@ class LongAction:
         self.done_message = Text.assemble(done_message) if done_message else running_message
         self.bullet: Text = Text("")
         self.status: ActionStatus = "RUNNING"
-        self._live = None
+        self._live: Optional[Live] = None
 
-    def set_status(self, status: ActionStatus):
+    def set_status(self, status: ActionStatus) -> None:
         self.status = status
         self.bullet = format_bullet(status)
         if self._live:
             self._live.update(self._render(), refresh=True)
 
-    def _render(self):
+    def _render(self) -> Text:
         message = self.done_message if self.status == 'OK' else self.running_message
         verb = self.done_verb if self.status == 'OK' else self.running_verb
         if self.status in {"WARN", "FAIL"}:
             message = Text.assemble(message, " ", (self.status, "bold red"))
         return format_action(self.host, verb, message, self.status)
 
-    def __enter__(self):
+    def __enter__(self) -> "LongAction":
         self.set_status("RUNNING")
         console = Console(stderr=True)
         self._live = Live(self._render(), auto_refresh=False, console=console).__enter__()
         return self
 
-    def __exit__(self, *args, **kwargs):
+    def __exit__(self, *args: Any, **kwargs: Any) -> None:
+        assert self._live is not None
         if self.status == "RUNNING":
             # If you didn't set a status before exit, then it failed
             self.set_status("FAIL")
@@ -146,5 +147,5 @@ class LongAction:
         self._live.__exit__(*args, **kwargs)
         self._live = None
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return True

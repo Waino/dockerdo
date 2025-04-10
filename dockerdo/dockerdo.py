@@ -643,7 +643,7 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
 @click.option("-i", "--interactive", is_flag=True, help="Connect stdin for interactive commands")
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
-def exec(args, interactive: bool, verbose: bool, dry_run: bool) -> int:
+def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> int:
     """Execute a command in the container"""
     set_execution_mode(verbose, dry_run)
     session = load_session()
@@ -890,7 +890,7 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
                     prettyprint.error(f"There are extraneous files in {session.session_dir}")
                     for file in session.session_dir.iterdir():
                         print(file)
-                    task.set_status("ERROR")
+                    task.set_status("FAIL")
                     return 1
             else:
                 task.set_status("OK")
