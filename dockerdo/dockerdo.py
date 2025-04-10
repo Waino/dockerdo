@@ -482,6 +482,10 @@ def run_or_start(
     if ssh_master_process is None:
         return 1
     else:
+        if not in_background:
+            prettyprint.info(
+                "Waiting for ssh master connection to close. Runs indefinitely: remember to background this process."
+            )
         ssh_master_process.wait()
     return 0
 
