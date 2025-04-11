@@ -871,15 +871,21 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
     if delete:
         # Delete the image
         if session.image_tag is not None:
+            host: Literal["local", "remote"] = "local" if session.remote_host is None else "remote"
             with prettyprint.LongAction(
-                host="local",
+                host=host,
                 running_verb="Deleting",
                 done_verb="Deleted" if not dry_run else "Would delete",
                 running_message=f"image {session.image_tag}",
             ) as task:
-                retval = run_local_command(
-                    f"docker rmi {session.image_tag}", cwd=session.local_work_dir, silent=True
-                )
+                if session.remote_host is not None:
+                    retval = run_remote_command(
+                        f"docker rmi {session.image_tag}", session
+                    )
+                else:
+                    retval = run_local_command(
+                        f"docker rmi {session.image_tag}", cwd=session.local_work_dir, silent=True
+                    )
                 if retval != 0:
                     return retval
                 task.set_status("OK")
