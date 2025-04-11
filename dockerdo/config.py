@@ -278,7 +278,10 @@ class Session(BaseModel):
 
     def get_modified_files(self) -> List[Path]:
         """Get the list of modified files"""
-        with open(self.session_dir / "modified_files", "r") as f:
+        modified_files_path = self.session_dir / "modified_files"
+        if not modified_files_path.exists():
+            return []
+        with open(modified_files_path, "r") as f:
             modified_files = {Path(line.strip()) for line in f}
         return list(sorted(modified_files))
 
