@@ -5,6 +5,8 @@ from pathlib import Path
 from dockerdo.config import Session
 from dockerdo import prettyprint
 
+IGNORE_PATHS = {Path(x) for x in ("/proc", "/dev", "/sys")}
+
 
 class InotifyListener:
     def __init__(self, session: Session) -> None:
@@ -19,14 +21,18 @@ class InotifyListener:
         """
         self.inotify = INotify()
         for path in self.session.sshfs_container_mount_point.rglob("*"):
+            path_inside_container = Path("/") / path.relative_to(
+                self.session.sshfs_container_mount_point
+            )
+            if path_inside_container in IGNORE_PATHS:
+                continue
             if path.is_dir():
                 try:
                     wd = self.inotify.add_watch(path, mask=self.watch_flags)
-                    path_inside_container = Path("/") / path.relative_to(
-                        self.session.sshfs_container_mount_point
-                    )
                     self.watch_descriptors[wd] = path_inside_container
                 except PermissionError:
+                    pass
+                except OSError:
                     pass
 
     def listen(self, verbose: bool = False) -> None:
