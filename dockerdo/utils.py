@@ -22,6 +22,7 @@ def make_image_tag(
     docker_registry: Optional[str],
     base_image: str,
     session_name: str,
+    image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}",
 ) -> str:
     if ":" in base_image:
         base_image, base_image_tag = base_image.split(":")
@@ -29,7 +30,11 @@ def make_image_tag(
         base_image_tag = "latest"
     if "/" in base_image:
         base_image = base_image.split("/")[-1]
-    image_tag = f"dockerdo-{base_image}:{base_image_tag}-{session_name}"
+    image_tag = image_name_template.format(
+        base_image=base_image,
+        base_image_tag=base_image_tag,
+        session_name=session_name,
+    )
     if docker_registry is None or len(docker_registry) == 0:
         return image_tag
     else:

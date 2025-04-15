@@ -28,9 +28,12 @@ class UserConfig(BaseModel):
     default_remote_host: Optional[str] = None
     default_distro: str = "ubuntu"
     default_image: str = "ubuntu:latest"
+    default_image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}"
     default_docker_registry: Optional[str] = None
     default_docker_run_args: str = ""
+    default_remote_delay: float = 0.3
     always_record_inotify: bool = False
+    always_interactive: bool = False
     ssh_key_path: Path = Path("~/.ssh/id_rsa.pub").expanduser()
 
     @classmethod
@@ -75,7 +78,7 @@ class Session(BaseModel):
         record_inotify: bool,
         remote_host_build_dir: Path,
         local_work_dir: Path,
-        remote_delay: float,
+        remote_delay: Optional[float],
         user_config: UserConfig,
         dry_run: bool = False,
     ) -> Optional["Session"]:
@@ -118,6 +121,11 @@ class Session(BaseModel):
                 remote_host
                 if remote_host is not None
                 else user_config.default_remote_host
+            )
+            remote_delay = (
+                remote_delay
+                if remote_delay is not None
+                else user_config.default_remote_delay
             )
         registry = (
             docker_registry

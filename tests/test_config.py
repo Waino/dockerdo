@@ -136,6 +136,7 @@ def test_session_from_opts_override_except_user_config():
         default_image="alpine:latest",
         default_docker_registry="docker.io",
         default_docker_run_args="--rm",
+        default_remote_delay=0.5,
         always_record_inotify=True,
     )
     with mock.patch(
@@ -154,7 +155,7 @@ def test_session_from_opts_override_except_user_config():
             record_inotify=False,
             remote_host_build_dir=Path("/tmp/build"),
             local_work_dir=Path("/another/workdir"),
-            remote_delay=0.5,
+            remote_delay=None,
             user_config=user_config,
         )
     assert session is not None

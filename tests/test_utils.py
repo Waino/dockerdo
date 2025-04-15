@@ -25,3 +25,22 @@ def test_ephemeral_container_name():
 )
 def test_make_image_tag(registry, base_image, session_name, expected):
     assert make_image_tag(registry, base_image, session_name) == expected
+
+
+@pytest.mark.parametrize(
+    "registry, base_image, session_name, expected",
+    [
+        (None, "alpine:nightly", "test", "custom:alpine-test-nightly-foo"),
+        ("harbor.local", "alpine", "foobar", "harbor.local/custom:alpine-foobar-latest-foo"),
+        ("", "alpine:3.14", "test", "custom:alpine-test-3.14-foo"),
+        (None, "custom/image:tag", "test-123", "custom:image-test-123-tag-foo"),
+        (None, "custom/org/image:tag", "test-456", "custom:image-test-456-tag-foo"),
+    ],
+)
+def test_make_image_tag_custom_template(registry, base_image, session_name, expected):
+    assert make_image_tag(
+        registry,
+        base_image,
+        session_name,
+        "custom:{base_image}-{session_name}-{base_image_tag}-foo"
+    ) == expected

@@ -73,8 +73,8 @@ Remote session with bells and whistles
     # Edit/inspect the overlay Dockerfile
     nvim Dockerfile.dockerdo
 
-    # Build the image remotely
-    dockerdo build --remote
+    # Build the image remotely. Define the image tag manually
+    dockerdo build --remote -t copenhagen:latest
 
     # Run the container remotely
     # Mount in a subdirectory of the remote host build dir

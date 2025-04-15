@@ -134,7 +134,7 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
 @click.option(
     "--remote-delay",
     type=float,
-    default=0.0,
+    default=None,
     help="Delay to add to all remote commands, to allow slow sshfs to catch up",
 )
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
@@ -150,7 +150,7 @@ def init(
     container_username: str,
     registry: Optional[str],
     build_dir: Path,
-    remote_delay: float,
+    remote_delay: Optional[float],
     verbose: bool,
     dry_run: bool,
 ) -> int:
@@ -224,10 +224,15 @@ def _overlay(distro: Optional[str], image: Optional[str], dry_run: bool) -> int:
 
 @cli.command()
 @click.option("--distro", type=click.Choice(DISTROS), default=None)
-@click.option("--image", type=str, help="Docker image", default=None)
+@click.option("--image", type=str, help="Base docker image", default=None)
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
-def overlay(distro: Optional[str], image: Optional[str], verbose: bool, dry_run: bool) -> int:
+def overlay(
+    distro: Optional[str],
+    image: Optional[str],
+    verbose: bool,
+    dry_run: bool
+) -> int:
     """Overlay a Dockerfile with the changes needed by dockerdo"""
     set_execution_mode(verbose, dry_run)
     return _overlay(distro, image, dry_run)
@@ -235,9 +240,10 @@ def overlay(distro: Optional[str], image: Optional[str], verbose: bool, dry_run:
 
 @cli.command()
 @click.option("--remote", is_flag=True, help="Build on remote host")
+@click.option("-t", "--overlay-tag", type=str, help="Override image tag for the overlayed image", default=None)
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
-def build(remote: bool, verbose: bool, dry_run: bool) -> int:
+def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool) -> int:
     """Build a Docker image"""
     set_execution_mode(verbose, dry_run)
     session = load_session()
@@ -249,10 +255,11 @@ def build(remote: bool, verbose: bool, dry_run: bool) -> int:
     dockerfile = cwd / "Dockerfile.dockerdo"
     if not dockerfile.exists():
         _overlay(session.distro, session.base_image, dry_run)
-    session.image_tag = make_image_tag(
-        session.docker_registry,
-        session.base_image,
-        session.name,
+    session.image_tag = overlay_tag if overlay_tag is not None else make_image_tag(
+        docker_registry=session.docker_registry,
+        base_image=session.base_image,
+        session_name=session.name,
+        image_name_template=user_config.default_image_name_template
     )
 
     # Read SSH key content
@@ -651,6 +658,7 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
 def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> int:
     """Execute a command in the container"""
     set_execution_mode(verbose, dry_run)
+    user_config = load_user_config()
     session = load_session()
     if session is None:
         return 1
@@ -658,6 +666,7 @@ def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> in
     session.write_container_env_file(verbose=verbose)
     if session.remote_delay > 0.0:
         time.sleep(session.remote_delay)
+    interactive = interactive or user_config.always_interactive
     retval, container_work_dir = run_container_command(command=command, session=session, interactive=interactive)
     if retval != 0:
         return retval
