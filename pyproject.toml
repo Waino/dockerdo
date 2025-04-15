@@ -11,10 +11,11 @@ readme = "README.rst"
 license = "MIT"
 dynamic = ["version", "description"]
 classifiers = [ "Development Status :: 4 - Beta",
-                "Intended Audience :: Science/Research",
-                "Operating System :: OS Independent",
+                "Intended Audience :: Developers",
+                "Operating System :: POSIX :: Linux",
                 "Programming Language :: Python",
-                "Topic :: Scientific/Engineering",
+                "Environment :: Console",
+                "Topic :: Software Development",
                 ]
 requires-python = ">=3.10"
 dependencies = [
