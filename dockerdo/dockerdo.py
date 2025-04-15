@@ -533,7 +533,12 @@ def run_or_start(
     default=None,
     help="Delay to add to all remote commands, to allow slow sshfs to catch up",
 )
-@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option(
+    "--verbose",
+    is_flag=True,
+    help="Print commands."
+    " Note that you can not shorten this to -v due to common usage of docker run -v for volume mounts."
+)
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def run(
     docker_run_args: List[str],

@@ -18,6 +18,7 @@ Documentation on readthedocs:  `<https://dockerdo.readthedocs.io/en/latest/?vers
    Concept.rst
    Commands.rst
    Configuration.rst
+   Examples.rst
    SshWalkthrough.rst
    WouldntItBeNice.rst
    Caveats.rst
