@@ -117,10 +117,14 @@ set -x
 export DOCKERDO_SESSION_DIR=/home/user/.local/share/dockerdo/my_session
 export DOCKERDO_SESSION_NAME=my_session
 function deactivate_dockerdo { unset DOCKERDO_SESSION_DIR; unset DOCKERDO_SESSION_NAME; fusermount -u /another/workdir/reno; }
-ssh -M -N -S /home/user/.local/share/dockerdo/my_session/ssh-socket-remote reno &
-ssh -S /home/user/.local/share/dockerdo/my_session/ssh-socket-remote reno mkdir -p /tmp/build
-mkdir -p /another/workdir/reno
-sshfs reno:/tmp/build /another/workdir/reno
+if [ ! -e /home/user/.local/share/dockerdo/my_session/ssh-socket-remote ]; then
+  ssh -M -N -S /home/user/.local/share/dockerdo/my_session/ssh-socket-remote reno &
+fi
+if ( ! mountpoint -q /another/workdir/reno ); then
+  ssh -S /home/user/.local/share/dockerdo/my_session/ssh-socket-remote reno mkdir -p /tmp/build
+  mkdir -p /another/workdir/reno
+  sshfs reno:/tmp/build /another/workdir/reno
+fi
 set +x
 """.lstrip()
 
