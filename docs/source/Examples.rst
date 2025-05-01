@@ -79,7 +79,7 @@ Remote session with bells and whistles
     # Run the container remotely
     # Mount in a subdirectory of the remote host build dir
     mkdir reykjavik/persistent_storage
-    dockerdo run -v /tmp/build/persistent_storage:/persistent_storage &
+    dockerdo run -v persistent_storage:/persistent_storage &
 
     # Go to a directory in the container
     pushd container/root
