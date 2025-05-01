@@ -250,13 +250,18 @@ class Session(BaseModel):
         )
 
         if self.remote_host is not None:
+            # Create a socket for ssh master connection to the remote host
+            result.append(f"ssh -M -N -S {self.session_dir}/ssh-socket-remote {self.remote_host} &\n")
+            # Ensure that the build directory exists on the remote host
+            result.append(
+                f"ssh -S {self.session_dir}/ssh-socket-remote {self.remote_host}"
+                f" mkdir -p {self.remote_host_build_dir}\n"
+            )
             # Mount remote host build directory if using remote host
             result.append(f"mkdir -p {self.sshfs_remote_mount_point}\n")
             result.append(
                 f"sshfs {self.remote_host}:{self.remote_host_build_dir} {self.sshfs_remote_mount_point}\n"
             )
-            # Create a socket for ssh master connection to the remote host
-            result.append(f"ssh -M -N -S {self.session_dir}/ssh-socket-remote {self.remote_host} &\n")
 
         result.append("set +x\n")
         return "".join(result)
