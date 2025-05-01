@@ -283,6 +283,10 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
         ) as task:
             # copy the Dockerfile to the remote host
             if not dry_run:
+                if not session.sshfs_remote_mount_point.is_mount():
+                    task.set_status("FAIL")
+                    prettyprint.error(f"Remote host build directory not mounted at {session.sshfs_remote_mount_point}")
+                    return 1
                 with open(dockerfile, "r") as fin:
                     with open(destination, "w") as fout:
                         fout.write(fin.read())
@@ -487,7 +491,7 @@ def run_or_start(
         )
         if retval != 0:
             return retval
-        if task and os.path.ismount(session.sshfs_container_mount_point):
+        if task and session.sshfs_container_mount_point.is_mount():
             task.set_status("OK")
         if dry_run:
             task.set_status("OK")
@@ -720,7 +724,7 @@ def status(verbose: bool, dry_run: bool) -> int:
     # Check status of mounts
     sshfs_remote_mount_point = session.sshfs_remote_mount_point
     if sshfs_remote_mount_point is not None:
-        if os.path.ismount(sshfs_remote_mount_point):
+        if sshfs_remote_mount_point.is_mount():
             prettyprint.info(
                 f"Remote host build directory mounted at {sshfs_remote_mount_point}"
             )
@@ -730,7 +734,7 @@ def status(verbose: bool, dry_run: bool) -> int:
             )
     sshfs_container_mount_point = session.sshfs_container_mount_point
     if session.container_state == "running":
-        if os.path.ismount(sshfs_container_mount_point):
+        if sshfs_container_mount_point.is_mount():
             prettyprint.info(
                 f"Container filesystem mounted at {sshfs_container_mount_point}"
             )
@@ -850,7 +854,7 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
         # Unmount remote host build directory
         sshfs_remote_mount_point = session.sshfs_remote_mount_point
         assert sshfs_remote_mount_point is not None
-        if os.path.ismount(sshfs_remote_mount_point):
+        if sshfs_remote_mount_point.is_mount():
             with prettyprint.LongAction(
                 host="local",
                 running_verb="Unmounting",
