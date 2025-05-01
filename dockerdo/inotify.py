@@ -24,7 +24,7 @@ class InotifyListener:
             path_inside_container = Path("/") / path.relative_to(
                 self.session.sshfs_container_mount_point
             )
-            if path_inside_container in IGNORE_PATHS:
+            if any(path_inside_container.is_relative_to(x) for x in IGNORE_PATHS):
                 continue
             if path.is_dir():
                 try:
