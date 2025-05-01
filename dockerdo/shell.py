@@ -123,6 +123,7 @@ def run_container_command(command: str, session: Session, interactive: bool = Fa
         return 1, Path()
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
     flags = ssh_stdin_flags(interactive, session)
+    assert session.ssh_port_on_remote_host is not None
     if session.remote_host is None:
         # remote_host is the same as local_host
         wrapped_command = (
