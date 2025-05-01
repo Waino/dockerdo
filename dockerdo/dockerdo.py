@@ -914,7 +914,13 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
             if not dry_run:
                 # delete the expected directory contents first
                 for file_name in [
-                    "activate", "command_history.jsonl", "env.list", "modified_files", "session.yaml"
+                    "activate",
+                    "command_history.jsonl",
+                    "env.list",
+                    "modified_files",
+                    "session.yaml",
+                    "ssh-socket-container",
+                    "ssh-socket-remote",
                 ]:
                     file_path = session.session_dir / file_name
                     if file_path.exists():
