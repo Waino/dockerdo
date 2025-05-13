@@ -63,6 +63,7 @@ class Session(BaseModel):
     remote_delay: float = 0.0
 
     container_state: Literal["nothing", "running", "stopped"] = "nothing"
+    host_key_lines: List[str] = []
 
     @classmethod
     def from_opts(

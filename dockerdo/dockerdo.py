@@ -11,21 +11,24 @@ from pathlib import Path
 from subprocess import Popen
 from typing import Optional, List, Literal
 
-from dockerdo import prettyprint
+from dockerdo import prettyprint, __version__
 from dockerdo.config import UserConfig, Session
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
-    set_execution_mode,
+    detect_background,
+    detect_ssh_agent,
+    get_container_work_dir,
     get_user_config_dir,
+    run_container_command,
     run_docker_save_pipe,
     run_local_command,
     run_remote_command,
-    run_container_command,
-    verify_container_state,
     run_ssh_master_process,
-    detect_background,
-    detect_ssh_agent,
+    set_execution_mode,
+    ssh_keyscan,
+    verify_container_state,
 )
+from dockerdo.ssh import ensure_known_host_key, remove_known_host_key
 from dockerdo.utils import make_image_tag
 
 
@@ -445,6 +448,19 @@ def run_or_start(
         if task:
             task.set_status("OK")
 
+    if in_background:
+        ctx_mgr = nullcontext()
+    else:
+        ctx_mgr = prettyprint.LongAction(
+            host="container",
+            running_verb="Scanning" if not dry_run else "Would scan",
+            done_verb="Scanned" if not dry_run else "Would scan",
+            running_message=f"container {session.container_name} ssh key",
+        )
+    with ctx_mgr as task:
+        ensure_known_host_key(session)
+        task.set_status("OK")
+
     remote_host = (
         session.remote_host if session.remote_host is not None else "localhost"
     )
@@ -466,7 +482,8 @@ def run_or_start(
             ssh_port_on_remote_host=ssh_port_on_remote_host
         )
         # sleep to wait for the ssh master process to start
-        time.sleep(2)
+        if not dry_run:
+            time.sleep(2)
         if task and os.path.exists(session.session_dir / "ssh-socket-container"):
             task.set_status("OK")
         if dry_run:
@@ -567,6 +584,7 @@ def run(
 
     Always run this command backgrounded, by adding an ampersand (&) at the end.
     """
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -612,6 +630,7 @@ def start(
 
     Always run this command backgrounded, by adding an ampersand (&) at the end.
     """
+    set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -682,8 +701,36 @@ def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> in
 @cli.command()
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def pwd(verbose: bool, dry_run: bool) -> int:
+    """Print the working directory in the container"""
+    set_execution_mode(verbose, dry_run)
+    session_dir = os.environ.get("DOCKERDO_SESSION_DIR", None)
+    if session_dir is None:
+        prettyprint.info("No active session")
+        return 0
+    session = load_session()
+    assert session is not None
+
+    # debug
+    session.ssh_port_on_remote_host = session.ssh_port_on_remote_host if session.ssh_port_on_remote_host is not None else 2222
+    print(ssh_keyscan(session=session))
+
+    container_work_dir = get_container_work_dir(session)
+    if not container_work_dir:
+        prettyprint.warning(
+            f"Current working directory is not inside the container mount point {session.sshfs_container_mount_point}"
+        )
+        return 1
+    prettyprint.info(str(container_work_dir))
+    return 0
+
+
+@cli.command()
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def status(verbose: bool, dry_run: bool) -> int:
     """Print the status of a session"""
+    prettyprint.info(f"Dockerdo version: {__version__}")
     set_execution_mode(verbose, dry_run)
     user_config_path = get_user_config_dir() / "dockerdo.yaml"
     if not user_config_path.exists():
@@ -762,7 +809,7 @@ def status(verbose: bool, dry_run: bool) -> int:
     prettyprint.container_status(session.container_state)
     prettyprint.info("Session status:")
     rich.print(
-        session.model_dump_yaml(exclude={"container_state"}),
+        session.model_dump_yaml(exclude={"container_state", "host_key_lines"}),
         file=sys.stderr,
     )
     session.save()
@@ -885,6 +932,8 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
             session.container_state = "nothing"
             session.save()
             task.set_status("OK")
+
+    remove_known_host_key(session)
 
     if delete:
         # Delete the image

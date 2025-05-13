@@ -6,7 +6,7 @@ import shlex
 import sys
 from pathlib import Path
 from subprocess import Popen, PIPE, DEVNULL, check_output, CalledProcessError
-from typing import Optional, TextIO, Tuple, Literal
+from typing import Optional, TextIO, Tuple, Literal, List
 
 from dockerdo import prettyprint
 from dockerdo.config import Session
@@ -267,3 +267,30 @@ def detect_ssh_agent() -> bool:
         return len(output) > 0
     except CalledProcessError:
         return False
+
+
+def ssh_keyscan(session: Session) -> List[str]:
+    """Scan the ssh key of the container"""
+    if session.remote_host is None:
+        command = f"ssh-keyscan -p {session.ssh_port_on_remote_host} localhost"
+    else:
+        # ssh-keyscan doesn't support jumps, so we must run it on the remote host
+        command = (
+            "ssh"
+            f" -n -S {session.session_dir}/ssh-socket-remote"
+            f" {session.remote_host}"
+            ' "'
+            f'ssh-keyscan -p {session.ssh_port_on_remote_host} localhost |'
+            r' sed -e \"s/localhost/$(hostname --short)/\"'
+            '"'
+        )
+    if verbose:
+        print(f"+ {command}", file=sys.stderr)
+    if not dry_run:
+        try:
+            output = check_output(shlex.split(command), stderr=DEVNULL)
+            return [line.strip() for line in output.decode('utf-8').split('\n')]
+        except CalledProcessError:
+            return []
+    else:
+        return []
