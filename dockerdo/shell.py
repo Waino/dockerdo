@@ -128,19 +128,19 @@ def run_container_command(command: str, session: Session, interactive: bool = Fa
         # remote_host is the same as local_host
         wrapped_command = (
             f"ssh {flags}"
+            " -o StrictHostKeyChecking=no"
             f" -p {session.ssh_port_on_remote_host}"
             f" {session.container_username}@localhost"
-            " -o StrictHostKeyChecking=no"
             f' "source {session.env_file_path} && cd {container_work_dir} && {escaped_command}"'
         )
     else:
         # remote_host is different from local_host, so jump via remote_host to container
         wrapped_command = (
             f"ssh {flags}"
+            " -o StrictHostKeyChecking=no"
             f" -J {session.remote_host}"
             f" -p {session.ssh_port_on_remote_host}"
             f" {session.container_username}@{session.remote_host}"
-            " -o StrictHostKeyChecking=no"
             f' "source {session.env_file_path} && cd {container_work_dir} && {escaped_command}"'
         )
     cwd = Path(os.getcwd())
