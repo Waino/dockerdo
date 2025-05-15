@@ -12,7 +12,7 @@ from subprocess import Popen
 from typing import Optional, List, Literal
 
 from dockerdo import prettyprint, __version__
-from dockerdo.config import UserConfig, Session
+from dockerdo.config import Preset, Session
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
     detect_background,
@@ -32,13 +32,16 @@ from dockerdo.ssh import ensure_known_host_key, remove_known_host_key
 from dockerdo.utils import make_image_tag
 
 
-def load_user_config() -> UserConfig:
+def load_preset(preset: str = '_default') -> Preset:
     """Load the user config"""
     user_config_path = get_user_config_dir() / "dockerdo.yaml"
     if not user_config_path.exists():
-        return UserConfig()
+        return Preset()
     with open(user_config_path, "r") as fin:
-        return UserConfig.from_yaml(fin.read())
+        presets = Preset.load_presets(fin.read())
+        if preset not in presets:
+            raise Exception(f'No preset {preset}')
+        return presets[preset]
 
 
 def load_session() -> Optional[Session]:
@@ -73,7 +76,7 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
     user_config_path = user_config_dir / "dockerdo.yaml"
     bash_completion_path = user_config_dir / "dockerdo.bash-completion"
     if not user_config_path.exists():
-        initial_config = UserConfig()
+        initial_config = Preset.initial_config()
         with prettyprint.LongAction(
             host="local",
             running_verb="Creating",
@@ -166,7 +169,8 @@ def init(
     """
     set_execution_mode(verbose, dry_run)
     in_background = detect_background()
-    user_config = load_user_config()
+    preset_name = '_default'        # TMP until option added
+    preset = load_preset(preset=preset_name)
     cwd = Path(os.getcwd())
     session = Session.from_opts(
         session_name=session_name,
@@ -181,7 +185,7 @@ def init(
         remote_host_build_dir=build_dir,
         local_work_dir=cwd,
         remote_delay=remote_delay,
-        user_config=user_config,
+        preset=preset,
         dry_run=dry_run,
     )
     if session is None:
@@ -252,7 +256,8 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
     session = load_session()
     if session is None:
         return 1
-    user_config = load_user_config()
+    preset_name = '_default'        # TMP until option added
+    preset = load_preset(preset=preset_name)
 
     cwd = Path(os.getcwd())
     dockerfile = cwd / "Dockerfile.dockerdo"
@@ -262,16 +267,16 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
         docker_registry=session.docker_registry,
         base_image=session.base_image,
         session_name=session.name,
-        image_name_template=user_config.default_image_name_template
+        image_name_template=preset.image_name_template
     )
 
     # Read SSH key content
     # This approach avoids the limitation of Docker build context
     # while still securely injecting the SSH key into the image during build time
-    if not user_config.ssh_key_path.exists():
-        prettyprint.error(f"SSH key not found at {user_config.ssh_key_path}")
+    if not preset.ssh_key_path.exists():
+        prettyprint.error(f"SSH key not found at {preset.ssh_key_path}")
         return 1
-    with open(user_config.ssh_key_path, "r") as f:
+    with open(preset.ssh_key_path, "r") as f:
         ssh_key = f.read().strip()
 
     if remote:
@@ -681,7 +686,8 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
 def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> int:
     """Execute a command in the container"""
     set_execution_mode(verbose, dry_run)
-    user_config = load_user_config()
+    preset_name = '_default'        # TMP until option added
+    preset = load_preset(preset=preset_name)
     session = load_session()
     if session is None:
         return 1
@@ -689,7 +695,7 @@ def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> in
     session.write_container_env_file(verbose=verbose)
     if session.remote_delay > 0.0:
         time.sleep(session.remote_delay)
-    interactive = interactive or user_config.always_interactive
+    interactive = interactive or preset.always_interactive
     retval, container_work_dir = run_container_command(command=command, session=session, interactive=interactive)
     if retval != 0:
         return retval
@@ -712,7 +718,9 @@ def pwd(verbose: bool, dry_run: bool) -> int:
     assert session is not None
 
     # debug
-    session.ssh_port_on_remote_host = session.ssh_port_on_remote_host if session.ssh_port_on_remote_host is not None else 2222
+    session.ssh_port_on_remote_host = (
+        session.ssh_port_on_remote_host if session.ssh_port_on_remote_host is not None else 2222
+    )
     print(ssh_keyscan(session=session))
 
     container_work_dir = get_container_work_dir(session)

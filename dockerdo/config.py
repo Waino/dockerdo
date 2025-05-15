@@ -4,9 +4,9 @@ import yaml
 import json
 from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
-from pydantic import Field, ConfigDict
+from pydantic import Field, ConfigDict, field_validator
 from tempfile import mkdtemp
-from typing import Optional, Literal, Dict, List
+from typing import Optional, Literal, Dict, List, Any
 
 from dockerdo.utils import ephemeral_container_name
 from dockerdo import prettyprint
@@ -22,22 +22,61 @@ class BaseModel(PydanticBaseModel):
         return yaml.dump(self.model_dump(mode="json", exclude=exclude), sort_keys=True)
 
 
-class UserConfig(BaseModel):
-    """User configuration for dockerdo"""
-
-    default_remote_host: Optional[str] = None
-    default_distro: str = "ubuntu"
-    default_image: str = "ubuntu:latest"
-    default_image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}"
-    default_docker_registry: Optional[str] = None
-    default_docker_run_args: str = ""
-    default_remote_delay: float = 0.3
-    always_record_inotify: bool = False
+class Preset(BaseModel):
+    """User configuration presets for dockerdo"""
+    remote_host: Optional[str] = None
+    distro: str = "ubuntu"
+    image: str = "ubuntu:latest"
+    image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}"
+    docker_registry: Optional[str] = None
+    docker_run_args: str = ""
+    remote_delay: float = 0.3
+    record_inotify: bool = False
     always_interactive: bool = False
     ssh_key_path: Path = Path("~/.ssh/id_rsa.pub").expanduser()
 
     @classmethod
-    def from_yaml(cls, yaml_str: str) -> "UserConfig":
+    def load_presets(cls, yaml_str: str) -> Dict[str, "Preset"]:
+        """Load the presets from yaml"""
+
+        # Initial parse does not validate the presets
+        class InitialParse(BaseModel):
+            default: Preset
+            presets: Any
+
+        config_dict = yaml.safe_load(yaml_str)
+        initial = InitialParse(**config_dict)
+
+        # Reparse config, with defaults from initial parse
+        class UserConfig(BaseModel):
+            default: Preset
+            presets: Dict[str, Preset]
+
+            @field_validator('presets', mode='before')
+            @classmethod
+            def set_defaults(cls, data: Dict[str, Any]) -> Dict[str, Any]:
+                if '_default' in data:
+                    raise ValueError('Reserved preset name "_default"')
+                data['_default'] = {}
+                for preset_name, values in data.items():
+                    for field in Preset.model_fields.keys():
+                        if field not in values:
+                            values[field] = initial.default.__getattribute__(field)
+                return data
+
+        config = UserConfig(**config_dict)
+        return config.presets
+
+    @classmethod
+    def initial_config(cls) -> "BaseModel":
+        class UserConfig(BaseModel):
+            default: Preset
+            presets: Dict[str, Any]
+
+        return UserConfig(default=cls(), presets={})
+
+    @classmethod
+    def from_yaml(cls, yaml_str: str) -> "Preset":
         """Load the config from yaml"""
         return cls(**yaml.safe_load(yaml_str))
 
@@ -80,7 +119,7 @@ class Session(BaseModel):
         remote_host_build_dir: Path,
         local_work_dir: Path,
         remote_delay: Optional[float],
-        user_config: UserConfig,
+        preset: Preset,
         dry_run: bool = False,
     ) -> Optional["Session"]:
         """
@@ -112,8 +151,8 @@ class Session(BaseModel):
                 return None
         if container_name is None:
             container_name = ephemeral_container_name()
-        distro = distro if distro is not None else user_config.default_distro
-        base_image = base_image if base_image is not None else user_config.default_image
+        distro = distro if distro is not None else preset.distro
+        base_image = base_image if base_image is not None else preset.image
         if local:
             remote_host = None
             remote_delay = 0.0
@@ -121,19 +160,19 @@ class Session(BaseModel):
             remote_host = (
                 remote_host
                 if remote_host is not None
-                else user_config.default_remote_host
+                else preset.remote_host
             )
             remote_delay = (
                 remote_delay
                 if remote_delay is not None
-                else user_config.default_remote_delay
+                else preset.remote_delay
             )
         registry = (
             docker_registry
             if docker_registry is not None
-            else user_config.default_docker_registry
+            else preset.docker_registry
         )
-        record_inotify = record_inotify or user_config.always_record_inotify
+        record_inotify = record_inotify or preset.record_inotify
         session = Session(
             name=session_name,
             container_name=container_name,

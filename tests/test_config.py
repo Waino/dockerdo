@@ -3,12 +3,12 @@
 from unittest import mock
 from pathlib import Path
 
-from dockerdo.config import Session, UserConfig
+from dockerdo.config import Session, Preset
 
 
 def test_session_from_opts_defaults():
     """Test the Session.from_opts method, mocking mkdtemp"""
-    user_config = UserConfig()
+    preset = Preset()
     with mock.patch("dockerdo.config.mkdtemp", return_value="/tmp/dockerdo_1234a67890"):
         session = Session.from_opts(
             session_name=None,
@@ -23,7 +23,7 @@ def test_session_from_opts_defaults():
             remote_host_build_dir=Path("."),
             local_work_dir=Path("/obscure/workdir"),
             remote_delay=0.0,
-            user_config=user_config,
+            preset=preset,
         )
     assert session is not None
     assert session.name == "1234a67890"
@@ -62,13 +62,13 @@ set +x
 
 def test_session_from_opts_override_all():
     """Test the Session.from_opts method, mocking expanduser"""
-    user_config = UserConfig(
-        default_remote_host="reykjavik",
-        default_distro="alpine",
-        default_image="alpine:latest",
-        default_docker_registry="docker.io",
-        default_docker_run_args="--rm",
-        always_record_inotify=True,
+    preset = Preset(
+        remote_host="reykjavik",
+        distro="alpine",
+        image="alpine:latest",
+        docker_registry="docker.io",
+        docker_run_args="--rm",
+        record_inotify=True,
     )
     with mock.patch(
         "dockerdo.config.Path.expanduser",
@@ -87,7 +87,7 @@ def test_session_from_opts_override_all():
             remote_host_build_dir=Path("/tmp/build"),
             local_work_dir=Path("/another/workdir"),
             remote_delay=1.0,
-            user_config=user_config,
+            preset=preset,
         )
     assert session is not None
     assert session.name == "my_session"
@@ -133,16 +133,16 @@ set +x
     assert session2 == session
 
 
-def test_session_from_opts_override_except_user_config():
+def test_session_from_opts_override_except_preset():
     """Test the Session.from_opts method, mocking expanduser"""
-    user_config = UserConfig(
-        default_remote_host="reykjavik",
-        default_distro="alpine",
-        default_image="alpine:latest",
-        default_docker_registry="docker.io",
-        default_docker_run_args="--rm",
-        default_remote_delay=0.5,
-        always_record_inotify=True,
+    preset = Preset(
+        remote_host="reykjavik",
+        distro="alpine",
+        image="alpine:latest",
+        docker_registry="docker.io",
+        docker_run_args="--rm",
+        remote_delay=0.5,
+        record_inotify=True,
     )
     with mock.patch(
         "dockerdo.config.Path.expanduser",
@@ -161,7 +161,7 @@ def test_session_from_opts_override_except_user_config():
             remote_host_build_dir=Path("/tmp/build"),
             local_work_dir=Path("/another/workdir"),
             remote_delay=None,
-            user_config=user_config,
+            preset=preset,
         )
     assert session is not None
     assert session.name == "my_session"
@@ -191,21 +191,21 @@ def test_session_from_opts_override_except_user_config():
     assert session2 == session
 
 
-def test_user_config_roundtrip():
-    """Test the UserConfig.from_yaml method"""
-    user_config = UserConfig()
-    assert user_config == UserConfig.from_yaml(user_config.model_dump_yaml())
+def test_preset_roundtrip():
+    """Test the Preset.from_yaml method"""
+    preset = Preset()
+    assert preset == Preset.from_yaml(preset.model_dump_yaml())
 
 
 def test_session_env_management():
     """Test the Session._update_env method"""
-    user_config = UserConfig(
-        default_remote_host="reykjavik",
-        default_distro="alpine",
-        default_image="alpine:latest",
-        default_docker_registry="docker.io",
-        default_docker_run_args="--rm",
-        always_record_inotify=True,
+    preset = Preset(
+        remote_host="reykjavik",
+        distro="alpine",
+        image="alpine:latest",
+        docker_registry="docker.io",
+        docker_run_args="--rm",
+        record_inotify=True,
     )
     with mock.patch(
         "dockerdo.config.Path.expanduser",
@@ -224,7 +224,7 @@ def test_session_env_management():
             remote_host_build_dir=Path("/tmp/build"),
             local_work_dir=Path("/another/workdir"),
             remote_delay=0.0,
-            user_config=user_config,
+            preset=preset,
         )
 
     assert len(session.env) == 0
@@ -244,13 +244,13 @@ def test_session_env_management():
 
 def test_session_from_opts_persistent_already_exists():
     """Test the Session.from_opts method, mocking expanduser and exists"""
-    user_config = UserConfig(
-        default_remote_host="reykjavik",
-        default_distro="alpine",
-        default_image="alpine:latest",
-        default_docker_registry="docker.io",
-        default_docker_run_args="--rm",
-        always_record_inotify=True,
+    preset = Preset(
+        remote_host="reykjavik",
+        distro="alpine",
+        image="alpine:latest",
+        docker_registry="docker.io",
+        docker_run_args="--rm",
+        record_inotify=True,
     )
     with mock.patch(
         "dockerdo.config.Path.expanduser",
@@ -270,20 +270,20 @@ def test_session_from_opts_persistent_already_exists():
                 remote_host_build_dir=Path("/tmp/build"),
                 local_work_dir=Path("/another/workdir"),
                 remote_delay=0.0,
-                user_config=user_config,
+                preset=preset,
             )
             assert session is None
 
 
 def test_session_dry_run():
     """Test the Session._update_env method"""
-    user_config = UserConfig(
-        default_remote_host="reykjavik",
-        default_distro="alpine",
-        default_image="alpine:latest",
-        default_docker_registry="docker.io",
-        default_docker_run_args="",
-        always_record_inotify=True,
+    preset = Preset(
+        remote_host="reykjavik",
+        distro="alpine",
+        image="alpine:latest",
+        docker_registry="docker.io",
+        docker_run_args="",
+        record_inotify=True,
     )
     with mock.patch(
         "dockerdo.config.Path.expanduser",
@@ -302,7 +302,7 @@ def test_session_dry_run():
             remote_host_build_dir=Path("/tmp/build"),
             local_work_dir=Path("/another/workdir"),
             remote_delay=0.0,
-            user_config=user_config,
+            preset=preset,
             dry_run=True,
         )
         assert session is not None
