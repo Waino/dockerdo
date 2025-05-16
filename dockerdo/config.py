@@ -4,7 +4,7 @@ import yaml
 import json
 from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
-from pydantic import Field, ConfigDict, field_validator
+from pydantic import Field, ConfigDict, field_validator, model_validator
 from tempfile import mkdtemp
 from typing import Optional, Literal, Dict, List, Any
 
@@ -22,8 +22,29 @@ class BaseModel(PydanticBaseModel):
         return yaml.dump(self.model_dump(mode="json", exclude=exclude), sort_keys=True)
 
 
+class MountSpecs(BaseModel):
+    near_system: Literal["local", "remote"] = "local"
+    near_path: Path
+    far_system: Literal["remote", "container"] = "container"
+    far_path: Path
+    mount_type: Literal["sshfs", "mutagen", "docker"]
+    mutagen_id: Optional[str] = None
+
+    @model_validator(mode='after')
+    def check_systems(self) -> "MountSpecs":
+        if self.mount_type == "docker":
+            if self.near_system != "remote" or self.far_system != "container":
+                raise ValueError("docker mount can only be from remote to container")
+        if self.near_system == "remote" and self.far_system == "remote":
+            raise ValueError("can't mount from remote to remote")
+        if self.mutagen_id is not None and self.mount_type != "mutagen":
+            raise ValueError("mutagen_id can only be set if mount_type is mutagen")
+        return self
+
+
 class Preset(BaseModel):
     """User configuration presets for dockerdo"""
+    description: str = ""
     always_interactive: bool = False
     container_username: str = "root"
     distro: str = "ubuntu"
@@ -36,6 +57,7 @@ class Preset(BaseModel):
     remote_host: Optional[str] = None
     remote_host_build_dir: Path = Path(".")
     ssh_key_path: Path = Path("~/.ssh/id_rsa.pub").expanduser()
+    mounts: List[MountSpecs] = Field(default_factory=list)
 
     @classmethod
     def load_presets(cls, yaml_str: str) -> Dict[str, "Preset"]:
@@ -59,7 +81,7 @@ class Preset(BaseModel):
             def set_defaults(cls, data: Dict[str, Any]) -> Dict[str, Any]:
                 if '_default' in data:
                     raise ValueError('Reserved preset name "_default"')
-                data['_default'] = {}
+                data['_default'] = {'description': 'Default when no preset is given'}
                 for preset_name, values in data.items():
                     for field in Preset.model_fields.keys():
                         if field not in values:
@@ -93,6 +115,7 @@ class Session(BaseModel):
     distro: str
     docker_registry: Optional[str]
     docker_run_args: Optional[str]
+    image_name_template: str
     record_inotify: bool
     remote_delay: float
     remote_host: Optional[str]
@@ -109,6 +132,7 @@ class Session(BaseModel):
 
     container_state: Literal["nothing", "running", "stopped"] = "nothing"
     host_key_lines: List[str] = []
+    mounts: List[MountSpecs] = Field(default_factory=list)
 
     @classmethod
     def from_opts(
@@ -195,6 +219,7 @@ class Session(BaseModel):
             distro=distro,
             docker_registry=registry,
             docker_run_args=preset.docker_run_args,
+            image_name_template=preset.image_name_template,
             local_work_dir=local_work_dir,
             name=session_name,
             record_inotify=record_inotify,

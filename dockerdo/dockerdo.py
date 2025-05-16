@@ -124,12 +124,12 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
 
 @cli.command()
 @click.argument("session_name", type=str, required=False)
-@click.option("--container", type=str, help="Container name [default: random]")
+@click.option("--preset", "preset_name", type=str, default="_default", help="Use preset from user config")
 @click.option("--always-interactive", is_flag=True, help="Always assume interactive commands")
+@click.option("--container", type=str, help="Container name [default: random]")
 @click.option("--distro", type=click.Choice(DISTROS), default=None)
 @click.option("--image", "base_image", type=str, help="Docker image")
 @click.option("--local", is_flag=True, help="Remote host is the same as local host")
-@click.option("--preset", "preset_name", type=str, default="_default", help="Use preset from user config")
 @click.option("--record", is_flag=True, help="Record filesystem events")
 @click.option("--registry", type=str, help="Docker registry", default=None)
 @click.option("--remote", "remote_host", type=str, help="Remote host")
@@ -265,8 +265,6 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
     session = load_session()
     if session is None:
         return 1
-    preset_name = '_default'        # TMP until option added
-    preset = load_preset(preset=preset_name)
 
     cwd = Path(os.getcwd())
     dockerfile = cwd / "Dockerfile.dockerdo"
@@ -276,16 +274,16 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
         docker_registry=session.docker_registry,
         base_image=session.base_image,
         session_name=session.name,
-        image_name_template=preset.image_name_template
+        image_name_template=session.image_name_template
     )
 
     # Read SSH key content
     # This approach avoids the limitation of Docker build context
     # while still securely injecting the SSH key into the image during build time
-    if not preset.ssh_key_path.exists():
-        prettyprint.error(f"SSH key not found at {preset.ssh_key_path}")
+    if not session.ssh_key_path.exists():
+        prettyprint.error(f"SSH key not found at {session.ssh_key_path}")
         return 1
-    with open(preset.ssh_key_path, "r") as f:
+    with open(session.ssh_key_path, "r") as f:
         ssh_key = f.read().strip()
 
     if remote:
@@ -695,8 +693,6 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
 def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> int:
     """Execute a command in the container"""
     set_execution_mode(verbose, dry_run)
-    preset_name = '_default'        # TMP until option added
-    preset = load_preset(preset=preset_name)
     session = load_session()
     if session is None:
         return 1
@@ -704,7 +700,7 @@ def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> in
     session.write_container_env_file(verbose=verbose)
     if session.remote_delay > 0.0:
         time.sleep(session.remote_delay)
-    interactive = interactive or preset.always_interactive
+    interactive = interactive or session.always_interactive
     retval, container_work_dir = run_container_command(command=command, session=session, interactive=interactive)
     if retval != 0:
         return retval
@@ -1011,6 +1007,28 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
     if session.remote_host is not None:
         prettyprint.info("Remember to foreground and close the ssh master process")
     prettyprint.info("Remember to call deactivate_dockerdo")
+    return 0
+
+
+@cli.command()
+@click.option("--preset", "preset_name", type=str, default=None, help="Preset from user config")
+def show_preset(
+    preset_name: Optional[str],
+) -> int:
+    """
+    List presets, or give the specification for a particular preset
+    """
+    user_config_path = get_user_config_dir() / "dockerdo.yaml"
+    if not user_config_path.exists():
+        prettyprint.error(f"No user config found in {user_config_path}")
+    with open(user_config_path, "r") as fin:
+        presets = Preset.load_presets(fin.read())
+    if preset_name is None:
+        for key, preset in presets.items():
+            prettyprint.info(f'{key:20s} {preset.description}')
+    else:
+        preset = presets[preset_name]
+        print(preset.model_dump_yaml())
     return 0
 
 
