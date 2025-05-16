@@ -24,15 +24,17 @@ class BaseModel(PydanticBaseModel):
 
 class Preset(BaseModel):
     """User configuration presets for dockerdo"""
-    remote_host: Optional[str] = None
-    distro: str = "ubuntu"
-    image: str = "ubuntu:latest"
-    image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}"
-    docker_registry: Optional[str] = None
-    docker_run_args: str = ""
-    remote_delay: float = 0.3
-    record_inotify: bool = False
     always_interactive: bool = False
+    container_username: str = "root"
+    distro: str = "ubuntu"
+    docker_registry: Optional[str] = None
+    docker_run_args: Optional[str] = None
+    base_image: str = "ubuntu:latest"
+    image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}"
+    record_inotify: bool = False
+    remote_delay: float = 0.3
+    remote_host: Optional[str] = None
+    remote_host_build_dir: Path = Path(".")
     ssh_key_path: Path = Path("~/.ssh/id_rsa.pub").expanduser()
 
     @classmethod
@@ -84,22 +86,26 @@ class Preset(BaseModel):
 class Session(BaseModel):
     """A dockerdo session"""
 
-    name: str
+    # Defaults from preset
+    always_interactive: bool
+    base_image: str
+    container_username: str
+    distro: str
+    docker_registry: Optional[str]
+    docker_run_args: Optional[str]
+    record_inotify: bool
+    remote_delay: float
+    remote_host: Optional[str]
+    remote_host_build_dir: Path
+    ssh_key_path: Path
+
     container_name: str
     env: Dict[str, str] = Field(default_factory=dict)
-    remote_host: Optional[str] = None
-    distro: str
-    base_image: str
     image_tag: Optional[str] = None
-    container_username: str = "root"
-    docker_registry: Optional[str] = None
-    record_inotify: bool = False
+    local_work_dir: Path
+    name: str
     session_dir: Path
     ssh_port_on_remote_host: Optional[int] = None
-    remote_host_build_dir: Path
-    local_work_dir: Path
-    docker_run_args: Optional[str] = None
-    remote_delay: float = 0.0
 
     container_state: Literal["nothing", "running", "stopped"] = "nothing"
     host_key_lines: List[str] = []
@@ -107,19 +113,21 @@ class Session(BaseModel):
     @classmethod
     def from_opts(
         cls,
-        session_name: Optional[str],
-        container_name: Optional[str],
-        remote_host: Optional[str],
-        local: bool,
-        distro: Optional[str],
+        always_interactive: bool,
         base_image: Optional[str],
-        container_username: str,
+        container_name: Optional[str],
+        container_username: Optional[str],
+        distro: Optional[str],
         docker_registry: Optional[str],
-        record_inotify: bool,
-        remote_host_build_dir: Path,
+        local: bool,
         local_work_dir: Path,
-        remote_delay: Optional[float],
         preset: Preset,
+        record_inotify: bool,
+        remote_delay: Optional[float],
+        remote_host: Optional[str],
+        remote_host_build_dir: Optional[Path],
+        session_name: Optional[str],
+        ssh_key_path: Optional[Path],
         dry_run: bool = False,
     ) -> Optional["Session"]:
         """
@@ -151,8 +159,14 @@ class Session(BaseModel):
                 return None
         if container_name is None:
             container_name = ephemeral_container_name()
+        always_interactive = always_interactive or preset.always_interactive
+        base_image = base_image if base_image is not None else preset.base_image
+        container_username = container_username if container_username is not None else preset.container_username
         distro = distro if distro is not None else preset.distro
-        base_image = base_image if base_image is not None else preset.image
+        ssh_key_path = ssh_key_path if ssh_key_path is not None else preset.ssh_key_path
+        remote_host_build_dir = (
+            remote_host_build_dir if remote_host_build_dir is not None else preset.remote_host_build_dir
+        )
         if local:
             remote_host = None
             remote_delay = 0.0
@@ -174,18 +188,21 @@ class Session(BaseModel):
         )
         record_inotify = record_inotify or preset.record_inotify
         session = Session(
-            name=session_name,
-            container_name=container_name,
-            remote_host=remote_host,
-            distro=distro,
+            always_interactive=always_interactive,
             base_image=base_image,
+            container_name=container_name,
             container_username=container_username,
+            distro=distro,
             docker_registry=registry,
-            record_inotify=record_inotify,
-            session_dir=session_dir,
-            remote_host_build_dir=remote_host_build_dir,
+            docker_run_args=preset.docker_run_args,
             local_work_dir=local_work_dir,
+            name=session_name,
+            record_inotify=record_inotify,
             remote_delay=remote_delay,
+            remote_host=remote_host,
+            remote_host_build_dir=remote_host_build_dir,
+            session_dir=session_dir,
+            ssh_key_path=ssh_key_path,
         )
         return session
 

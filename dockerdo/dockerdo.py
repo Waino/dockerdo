@@ -125,17 +125,22 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
 @cli.command()
 @click.argument("session_name", type=str, required=False)
 @click.option("--container", type=str, help="Container name [default: random]")
-@click.option("--record", is_flag=True, help="Record filesystem events")
-@click.option("--remote", "remote_host", type=str, help="Remote host")
-@click.option("--local", is_flag=True, help="Remote host is the same as local host")
+@click.option("--always-interactive", is_flag=True, help="Always assume interactive commands")
 @click.option("--distro", type=click.Choice(DISTROS), default=None)
-@click.option("--image", type=str, help="Docker image")
-@click.option(
-    "--user", "container_username", type=str, help="Container username", default="root"
-)
+@click.option("--image", "base_image", type=str, help="Docker image")
+@click.option("--local", is_flag=True, help="Remote host is the same as local host")
+@click.option("--preset", "preset_name", type=str, default="_default", help="Use preset from user config")
+@click.option("--record", is_flag=True, help="Record filesystem events")
 @click.option("--registry", type=str, help="Docker registry", default=None)
+@click.option("--remote", "remote_host", type=str, help="Remote host")
 @click.option(
-    "--build-dir", type=Path, help="Remote host build directory", default=Path(".")
+    "--user", "container_username", type=str, help="Container username", default=None,
+)
+@click.option(
+    "--build-dir", type=Path, help="Remote host build directory", default=None,
+)
+@click.option(
+    "--ssh-key", 'ssh_key_path', type=Path, help="Path to ssh public key", default=None,
 )
 @click.option(
     "--remote-delay",
@@ -146,17 +151,20 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def init(
-    record: bool,
-    session_name: Optional[str],
+    preset_name: str,
+    always_interactive: bool,
+    base_image: Optional[str],
+    build_dir: Optional[Path],
     container: Optional[str],
-    remote_host: Optional[str],
-    local: bool,
+    container_username: Optional[str],
     distro: Optional[str],
-    image: Optional[str],
-    container_username: str,
+    local: bool,
+    record: bool,
     registry: Optional[str],
-    build_dir: Path,
     remote_delay: Optional[float],
+    remote_host: Optional[str],
+    session_name: Optional[str],
+    ssh_key_path: Optional[Path],
     verbose: bool,
     dry_run: bool,
 ) -> int:
@@ -169,23 +177,24 @@ def init(
     """
     set_execution_mode(verbose, dry_run)
     in_background = detect_background()
-    preset_name = '_default'        # TMP until option added
     preset = load_preset(preset=preset_name)
     cwd = Path(os.getcwd())
     session = Session.from_opts(
-        session_name=session_name,
+        always_interactive=always_interactive,
+        base_image=base_image,
         container_name=container,
-        remote_host=remote_host,
-        local=local,
-        distro=distro,
-        base_image=image,
         container_username=container_username,
+        distro=distro,
         docker_registry=registry,
-        record_inotify=record,
-        remote_host_build_dir=build_dir,
+        local=local,
         local_work_dir=cwd,
-        remote_delay=remote_delay,
         preset=preset,
+        record_inotify=record,
+        remote_delay=remote_delay,
+        remote_host=remote_host,
+        remote_host_build_dir=build_dir,
+        session_name=session_name,
+        ssh_key_path=ssh_key_path,
         dry_run=dry_run,
     )
     if session is None:

@@ -11,36 +11,39 @@ def test_session_from_opts_defaults():
     preset = Preset()
     with mock.patch("dockerdo.config.mkdtemp", return_value="/tmp/dockerdo_1234a67890"):
         session = Session.from_opts(
-            session_name=None,
-            container_name=None,
-            remote_host=None,
-            local=True,
-            distro=None,
+            always_interactive=False,
             base_image=None,
+            container_name=None,
             container_username="root",
+            distro=None,
             docker_registry=None,
-            record_inotify=False,
-            remote_host_build_dir=Path("."),
+            local=True,
             local_work_dir=Path("/obscure/workdir"),
+            record_inotify=False,
             remote_delay=0.0,
+            remote_host=None,
+            remote_host_build_dir=Path("."),
+            session_name=None,
+            ssh_key_path=Path("/use/this/key"),
             preset=preset,
         )
     assert session is not None
-    assert session.name == "1234a67890"
-    assert session.container_name is not None
-    assert session.remote_host is None
-    assert session.distro == "ubuntu"
+    assert session.always_interactive is False
     assert session.base_image == "ubuntu:latest"
-    assert session.image_tag is None
+    assert session.container_name is not None
     assert session.container_username == "root"
+    assert session.distro == "ubuntu"
     assert session.docker_registry is None
+    assert session.docker_run_args is None
+    assert session.image_tag is None
+    assert session.local_work_dir == Path("/obscure/workdir")
+    assert session.name == "1234a67890"
     assert session.record_inotify is False
+    assert session.remote_delay == 0.0
+    assert session.remote_host is None
+    assert session.remote_host_build_dir == Path(".")
     assert session.session_dir == Path("/tmp/dockerdo_1234a67890")
     assert session.ssh_port_on_remote_host is None
-    assert session.remote_host_build_dir == Path(".")
-    assert session.local_work_dir == Path("/obscure/workdir")
-    assert session.remote_delay == 0.0
-    assert session.docker_run_args is None
     assert session.container_state == "nothing"
 
     assert session.get_homedir() == Path("/root")
@@ -63,49 +66,57 @@ set +x
 def test_session_from_opts_override_all():
     """Test the Session.from_opts method, mocking expanduser"""
     preset = Preset(
+        always_interactive=False,
         remote_host="reykjavik",
         distro="alpine",
-        image="alpine:latest",
+        base_image="alpine:latest",
         docker_registry="docker.io",
         docker_run_args="--rm",
         record_inotify=True,
+        ssh_key_path=Path("/preset/key"),
     )
     with mock.patch(
         "dockerdo.config.Path.expanduser",
         return_value=Path("/home/user/.local/share/dockerdo/my_session")
     ):
         session = Session.from_opts(
-            session_name='my_session',
-            container_name='my_container',
-            remote_host='reno',
-            local=False,
-            distro="ubuntu",
+            always_interactive=True,
             base_image="mycustom:nightly",
+            container_name='my_container',
             container_username="ubuntu",
+            distro="ubuntu",
             docker_registry="harbor.local",
-            record_inotify=False,
-            remote_host_build_dir=Path("/tmp/build"),
+            local=False,
             local_work_dir=Path("/another/workdir"),
+            record_inotify=False,
             remote_delay=1.0,
+            remote_host='reno',
+            remote_host_build_dir=Path("/tmp/build"),
+            session_name='my_session',
+            ssh_key_path=Path("/use/this/key"),
             preset=preset,
         )
     assert session is not None
-    assert session.name == "my_session"
-    assert session.container_name == "my_container"
-    assert session.remote_host == "reno"
-    assert session.distro == "ubuntu"
+    assert session.always_interactive is True
     assert session.base_image == "mycustom:nightly"
-    assert session.image_tag is None
+    assert session.container_name == "my_container"
     assert session.container_username == "ubuntu"
+    assert session.distro == "ubuntu"
     assert session.docker_registry == "harbor.local"
-    assert session.record_inotify is True   # always_record_inotify overrides record_inotify
-    assert session.session_dir == Path("/home/user/.local/share/dockerdo/my_session")
-    assert session.ssh_port_on_remote_host is None
-    assert session.remote_host_build_dir == Path("/tmp/build")
+    assert session.image_tag is None
     assert session.local_work_dir == Path("/another/workdir")
+    assert session.name == "my_session"
+    assert session.record_inotify is True   # always_record_inotify overrides record_inotify
     assert session.remote_delay == 1.0
-    assert session.docker_run_args is None
+    assert session.remote_host == "reno"
+    assert session.remote_host_build_dir == Path("/tmp/build")
+    assert session.session_dir == Path("/home/user/.local/share/dockerdo/my_session")
+    assert session.ssh_key_path == Path("/use/this/key")
+    assert session.ssh_port_on_remote_host is None
     assert session.container_state == "nothing"
+
+    # Not overrideable at session init
+    assert session.docker_run_args == "--rm"
 
     assert session.get_homedir() == Path("/home/ubuntu")
     assert session.sshfs_remote_mount_point == Path("/another/workdir/reno")
@@ -133,12 +144,12 @@ set +x
     assert session2 == session
 
 
-def test_session_from_opts_override_except_preset():
+def test_session_from_opts_override_some():
     """Test the Session.from_opts method, mocking expanduser"""
     preset = Preset(
         remote_host="reykjavik",
         distro="alpine",
-        image="alpine:latest",
+        base_image="alpine:latest",
         docker_registry="docker.io",
         docker_run_args="--rm",
         remote_delay=0.5,
@@ -149,37 +160,43 @@ def test_session_from_opts_override_except_preset():
         return_value=Path("/home/user/.local/share/dockerdo/my_session")
     ):
         session = Session.from_opts(
-            session_name='my_session',
-            container_name='my_container',
-            remote_host=None,
-            local=False,
-            distro=None,
+            always_interactive=False,
             base_image=None,
+            container_name='my_container',
             container_username="alpine",
+            distro=None,
             docker_registry=None,
-            record_inotify=False,
-            remote_host_build_dir=Path("/tmp/build"),
+            local=False,
             local_work_dir=Path("/another/workdir"),
+            record_inotify=False,
             remote_delay=None,
+            remote_host=None,
+            remote_host_build_dir=Path("/tmp/build"),
+            session_name='my_session',
+            ssh_key_path=Path("/use/this/key"),
             preset=preset,
         )
     assert session is not None
-    assert session.name == "my_session"
-    assert session.container_name == "my_container"
-    assert session.remote_host == "reykjavik"
-    assert session.distro == "alpine"
+    assert session.always_interactive is False
     assert session.base_image == "alpine:latest"
-    assert session.image_tag is None
+    assert session.container_name == "my_container"
     assert session.container_username == "alpine"
+    assert session.distro == "alpine"
     assert session.docker_registry == "docker.io"
-    assert session.record_inotify is True   # always_record_inotify overrides record_inotify
-    assert session.session_dir == Path("/home/user/.local/share/dockerdo/my_session")
-    assert session.ssh_port_on_remote_host is None
-    assert session.remote_host_build_dir == Path("/tmp/build")
+    assert session.image_tag is None
     assert session.local_work_dir == Path("/another/workdir")
+    assert session.name == "my_session"
+    assert session.record_inotify is True   # preset record_inotify
     assert session.remote_delay == 0.5
-    assert session.docker_run_args is None
+    assert session.remote_host == "reykjavik"
+    assert session.remote_host_build_dir == Path("/tmp/build")
+    assert session.session_dir == Path("/home/user/.local/share/dockerdo/my_session")
+    assert session.ssh_key_path == Path("/use/this/key")
+    assert session.ssh_port_on_remote_host is None
     assert session.container_state == "nothing"
+
+    # Not overrideable at session init
+    assert session.docker_run_args == "--rm"
 
     assert session.get_homedir() == Path("/home/alpine")
     assert session.sshfs_remote_mount_point == Path("/another/workdir/reykjavik")
@@ -202,7 +219,7 @@ def test_session_env_management():
     preset = Preset(
         remote_host="reykjavik",
         distro="alpine",
-        image="alpine:latest",
+        base_image="alpine:latest",
         docker_registry="docker.io",
         docker_run_args="--rm",
         record_inotify=True,
@@ -212,18 +229,20 @@ def test_session_env_management():
         return_value=Path("/home/user/.local/share/dockerdo/my_session")
     ):
         session = Session.from_opts(
-            session_name='my_session',
-            container_name='my_container',
-            remote_host=None,
-            local=False,
-            distro=None,
+            always_interactive=False,
             base_image=None,
+            container_name='my_container',
             container_username="alpine",
+            distro=None,
             docker_registry=None,
-            record_inotify=False,
-            remote_host_build_dir=Path("/tmp/build"),
+            local=False,
             local_work_dir=Path("/another/workdir"),
+            record_inotify=False,
             remote_delay=0.0,
+            remote_host=None,
+            remote_host_build_dir=Path("/tmp/build"),
+            session_name='my_session',
+            ssh_key_path=Path("/use/this/key"),
             preset=preset,
         )
 
@@ -247,7 +266,7 @@ def test_session_from_opts_persistent_already_exists():
     preset = Preset(
         remote_host="reykjavik",
         distro="alpine",
-        image="alpine:latest",
+        base_image="alpine:latest",
         docker_registry="docker.io",
         docker_run_args="--rm",
         record_inotify=True,
@@ -258,18 +277,20 @@ def test_session_from_opts_persistent_already_exists():
     ):
         with mock.patch("dockerdo.config.Path.exists", return_value=True):
             session = Session.from_opts(
-                session_name='my_session',
-                container_name='my_container',
-                remote_host='reno',
-                local=False,
-                distro="ubuntu",
+                always_interactive=False,
                 base_image="mycustom:nightly",
+                container_name='my_container',
                 container_username="ubuntu",
+                distro="ubuntu",
                 docker_registry="harbor.local",
-                record_inotify=False,
-                remote_host_build_dir=Path("/tmp/build"),
+                local=False,
                 local_work_dir=Path("/another/workdir"),
+                record_inotify=False,
                 remote_delay=0.0,
+                remote_host='reno',
+                remote_host_build_dir=Path("/tmp/build"),
+                session_name='my_session',
+                ssh_key_path=Path("/use/this/key"),
                 preset=preset,
             )
             assert session is None
@@ -280,7 +301,7 @@ def test_session_dry_run():
     preset = Preset(
         remote_host="reykjavik",
         distro="alpine",
-        image="alpine:latest",
+        base_image="alpine:latest",
         docker_registry="docker.io",
         docker_run_args="",
         record_inotify=True,
@@ -290,18 +311,20 @@ def test_session_dry_run():
         return_value=Path("/home/user/.local/share/dockerdo/my_session")
     ):
         session = Session.from_opts(
-            session_name=None,
-            container_name='my_container',
-            remote_host=None,
-            local=False,
-            distro=None,
+            always_interactive=False,
             base_image=None,
+            container_name='my_container',
             container_username="alpine",
+            distro=None,
             docker_registry=None,
-            record_inotify=False,
-            remote_host_build_dir=Path("/tmp/build"),
+            local=False,
             local_work_dir=Path("/another/workdir"),
+            record_inotify=False,
             remote_delay=0.0,
+            remote_host=None,
+            remote_host_build_dir=Path("/tmp/build"),
+            session_name=None,
+            ssh_key_path=Path("/use/this/key"),
             preset=preset,
             dry_run=True,
         )
