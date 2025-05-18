@@ -4,22 +4,27 @@ import json
 import os
 import shlex
 import sys
+from contextlib import nullcontext, AbstractContextManager
 from pathlib import Path
+from pydantic import ValidationError, Field
 from subprocess import Popen, PIPE, DEVNULL, check_output, CalledProcessError
-from typing import Optional, TextIO, Tuple, Literal, List
+from typing import Optional, TextIO, Tuple, Literal, List, Union
 
 from dockerdo import prettyprint
-from dockerdo.config import Session
+from dockerdo.config import Session, MountSpecs, BaseModel
 
 verbose = False
 dry_run = False
+in_background = False
 
 
-def set_execution_mode(verbose_mode: bool, dry_run_mode: bool) -> None:
+def set_execution_mode(verbose_mode: bool, dry_run_mode: bool) -> bool:
     """Set the execution mode"""
-    global verbose, dry_run
+    global verbose, dry_run, in_background
     verbose = verbose_mode or dry_run_mode
     dry_run = dry_run_mode
+    in_background = detect_background()
+    return in_background
 
 
 def get_user_config_dir() -> Path:
@@ -208,11 +213,13 @@ def verify_container_state(session: Session) -> bool:
     except CalledProcessError as e:
         prettyprint.error(f"Error running docker ps: {e}")
         return False
+
+    try:
+        actual_state = parse_docker_ps_output(output.decode("utf-8"))
     except json.JSONDecodeError as e:
         prettyprint.error(f"Error decoding docker ps output: {e}")
         return False
 
-    actual_state = parse_docker_ps_output(output.decode("utf-8"))
     acceptable_state = determine_acceptable_container_state(actual_state)
     if acceptable_state is None:
         prettyprint.error(f"Unexpected container state: {actual_state}")
@@ -294,3 +301,213 @@ def ssh_keyscan(session: Session) -> List[str]:
             return []
     else:
         return []
+
+
+# ## Sshfs and mutagen mounts
+
+
+class MutagenEndpointLocal(BaseModel):
+    protocol: Literal["local"] = "local"
+    path: Path
+    directories: int = 0
+    files: int = 0
+    symbolicLinks: int = 0
+
+
+class MutagenEndpointSsh(BaseModel):
+    protocol: Literal["ssh"] = "ssh"
+    path: Path
+    user: str
+    host: str
+    port: int
+    directories: int = 0
+    files: int = 0
+    symbolicLinks: int = 0
+
+
+class MutagenStatus(BaseModel):
+    """Status of a mutagen sync. Only the fields we care about."""
+
+    identifier: str
+    alpha: Union[MutagenEndpointLocal, MutagenEndpointSsh] = Field(discriminator="protocol")
+    beta: Union[MutagenEndpointLocal, MutagenEndpointSsh] = Field(discriminator="protocol")
+    status: str
+
+
+def ensure_mounts(session: Session) -> None:
+    """
+    Ensure that the mounts are active.
+
+    Idempotent: if a mount is already active, does nothing.
+    """
+    mutagen_status: Optional[List[MutagenStatus]]
+    if any(mount_specs.mount_type == "mutagen" for mount_specs in session.mounts):
+        mutagen_status = get_mutagen_status(session)
+        if dry_run:
+            return
+        if mutagen_status is None:
+            prettyprint.error("Failed to get mutagen status")
+            return
+    else:
+        mutagen_status = None
+    for mount_specs in session.mounts:
+        if mount_specs.mount_type == "sshfs":
+            ensure_sshfs_mount(mount_specs, session)
+        elif mount_specs.mount_type == "mutagen":
+            assert mutagen_status is not None
+            ensure_mutagen_mount(mount_specs, mutagen_status, session)
+        elif mount_specs.mount_type == "docker":
+            # Docker mounts can only be made when starting the container
+            pass
+        else:
+            raise ValueError(f"Unknown mount type {mount_specs.mount_type}")
+
+
+def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
+    """Ensure that the sshfs mount is active"""
+    assert mount_specs.mount_type == "sshfs"
+    # check if already mounted
+    if mount_specs.near_path.is_mount():
+        return
+
+    # mount
+    remote_host = (
+        session.remote_host if session.remote_host is not None else "localhost"
+    )
+    ctx_mgr: AbstractContextManager
+    if not in_background:
+        ctx_mgr = prettyprint.LongAction(
+            host="local",
+            running_verb="Mounting" if not dry_run else "Would mount",
+            done_verb="Mounted" if not dry_run else "Would mount",
+            running_message=f"{mount_specs.far_path} to {mount_specs.near_path}",
+        )
+    else:
+        ctx_mgr = nullcontext()
+    with ctx_mgr as task:
+        if not dry_run:
+            os.makedirs(mount_specs.near_path, exist_ok=True)
+        # FIXME: -p is for container, but also support remote host?
+        retval = run_local_command(
+            f"sshfs -p {session.ssh_port_on_remote_host}"
+            f" {session.container_username}@{remote_host}:{mount_specs.far_path}"
+            f" {mount_specs.near_path}",
+            cwd=session.local_work_dir,
+            silent=in_background,
+        )
+        if retval != 0:
+            raise Exception(f"Failed to mount {mount_specs.far_path} to {mount_specs.near_path}")
+        if task and session.sshfs_container_mount_point.is_mount():
+            task.set_status("OK")
+        if dry_run:
+            task.set_status("OK")
+
+
+def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenStatus], session: Session) -> None:
+    """Ensure that the mutagen sync is active"""
+    assert mount_specs.mount_type == "mutagen"
+
+    # check if already mounted
+    for status in mutagen_status:
+        if status.identifier == mount_specs.mutagen_id:
+            if status.status == "watching":
+                return
+
+    # mount
+    remote_host = (
+        session.remote_host if session.remote_host is not None else "localhost"
+    )
+    ctx_mgr: AbstractContextManager
+    if not in_background:
+        ctx_mgr = prettyprint.LongAction(
+            host="local",
+            running_verb="Mounting" if not dry_run else "Would mount",
+            done_verb="Mounted" if not dry_run else "Would mount",
+            running_message=f"{mount_specs.far_path} to {mount_specs.near_path}",
+        )
+    else:
+        ctx_mgr = nullcontext()
+    with ctx_mgr as task:
+        if not dry_run:
+            os.makedirs(mount_specs.near_path, exist_ok=True)
+        # FIXME: -p is for container, but also support remote host?
+        # FIXME: parse to get id "Created session sync_..."
+        retval = run_local_command(
+            f"mutagen sync create"
+            f" {mount_specs.near_path}"
+            f" {session.container_username}@{remote_host}:{session.ssh_port_on_remote_host}:{mount_specs.far_path}",
+            cwd=session.local_work_dir,
+            silent=in_background,
+        )
+        if retval != 0:
+            raise Exception(f"Failed to mount {mount_specs.far_path} to {mount_specs.near_path}")
+        if task and session.sshfs_container_mount_point.is_mount():
+            task.set_status("OK")
+        if dry_run:
+            task.set_status("OK")
+
+
+def stop_mounts(session: Session) -> None:
+    """
+    Stop all mounts.
+
+    Idempotent: if a mount is not active, does nothing.
+    """
+    pass
+
+
+def stop_sshfs_mount(mount_specs: MountSpecs) -> None:
+    """Unmount the sshfs mount"""
+    assert mount_specs.mount_type == "sshfs"
+    pass
+
+
+def stop_mutagen_mount(mount_specs: MountSpecs, mutagen_status: MutagenStatus) -> None:
+    """Stop the mutagen sync"""
+    assert mount_specs.mount_type == "mutagen"
+    pass
+
+
+def remove_mounts(session: Session) -> None:
+    """
+    Permanently remove all mounts.
+    """
+    pass
+
+
+def remove_mutagen_mount(mount_specs: MountSpecs, mutagen_status: MutagenStatus) -> None:
+    """Permanently remove the mutagen sync"""
+    assert mount_specs.mount_type == "mutagen"
+    pass
+
+
+def parse_mutagen_status(output: str) -> List[MutagenStatus]:
+    """Parse the output of mutagen sync list"""
+    return [MutagenStatus(**x) for x in json.loads(output)]
+
+
+def get_mutagen_status(session: Session) -> Optional[List[MutagenStatus]]:
+    """Get the status of all mutagen syncs"""
+    command = 'mutagen sync list --template "{{ json . }}"'
+    if session.remote_host is not None:
+        command = make_remote_command(command, session)
+
+    if verbose:
+        print(f"+ {command}", file=sys.stderr)
+    if dry_run:
+        return None
+
+    try:
+        output = check_output(shlex.split(command), cwd=session.local_work_dir)
+    except CalledProcessError as e:
+        prettyprint.error(f"Error running mutagen sync list: {e}")
+        return None
+
+    try:
+        return parse_mutagen_status(output.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        prettyprint.error(f"Error decoding mutagen status: {e}")
+        return None
+    except ValidationError as e:
+        prettyprint.error(f"Error validating mutagen status: {e}")
+        return None

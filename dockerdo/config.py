@@ -28,6 +28,7 @@ class MountSpecs(BaseModel):
     far_system: Literal["remote", "container"] = "container"
     far_path: Path
     mount_type: Literal["sshfs", "mutagen", "docker"]
+    # mutagen_id is None if not a mutagen mount, or if not yet created
     mutagen_id: Optional[str] = None
 
     @model_validator(mode='after')

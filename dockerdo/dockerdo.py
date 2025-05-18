@@ -12,12 +12,13 @@ from subprocess import Popen
 from typing import Optional, List, Literal
 
 from dockerdo import prettyprint, __version__
-from dockerdo.config import Preset, Session
+from dockerdo.config import Preset, Session, MountSpecs
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
-    detect_background,
     detect_ssh_agent,
+    ensure_mounts,
     get_container_work_dir,
+    get_mutagen_status,
     get_user_config_dir,
     run_container_command,
     run_docker_save_pipe,
@@ -175,8 +176,7 @@ def init(
 
     SESSION_NAME is optional. If not given, an ephemeral session is created.
     """
-    set_execution_mode(verbose, dry_run)
-    in_background = detect_background()
+    in_background = set_execution_mode(verbose, dry_run)
     preset = load_preset(preset=preset_name)
     cwd = Path(os.getcwd())
     session = Session.from_opts(
@@ -412,8 +412,7 @@ def run_or_start(
 
     Always run this command backgrounded, by adding an ampersand (&) at the end.
     """
-    in_background = detect_background()
-    set_execution_mode(verbose, dry_run)
+    in_background = set_execution_mode(verbose, dry_run)
     if session is None:
         return 1
     if session.image_tag is None:
@@ -429,12 +428,14 @@ def run_or_start(
     docker_args_str = " ".join(docker_args)
     if remote_delay is not None:
         session.remote_delay = remote_delay
-    ssh_port_on_remote_host = session.ssh_port_on_remote_host if session.ssh_port_on_remote_host is not None else 2222
+    session.ssh_port_on_remote_host = (
+        session.ssh_port_on_remote_host if session.ssh_port_on_remote_host is not None else 2222
+    )
 
     if docker_command == "run":
         command = (
             f"docker run -d {docker_args_str}"
-            f" -p {ssh_port_on_remote_host}:22 "
+            f" -p {session.ssh_port_on_remote_host}:22 "
             f" --name {session.container_name} {session.image_tag}"
         )
     else:  # start
@@ -471,7 +472,8 @@ def run_or_start(
         )
     with ctx_mgr as task:
         ensure_known_host_key(session)
-        task.set_status("OK")
+        if task:
+            task.set_status("OK")
 
     remote_host = (
         session.remote_host if session.remote_host is not None else "localhost"
@@ -491,7 +493,7 @@ def run_or_start(
         ssh_master_process = run_ssh_master_process(
             session=session,
             remote_host=remote_host,
-            ssh_port_on_remote_host=ssh_port_on_remote_host
+            ssh_port_on_remote_host=session.ssh_port_on_remote_host
         )
         # sleep to wait for the ssh master process to start
         if not dry_run:
@@ -512,7 +514,7 @@ def run_or_start(
         if not dry_run:
             os.makedirs(session.sshfs_container_mount_point, exist_ok=True)
         retval = run_local_command(
-            f"sshfs -p {ssh_port_on_remote_host}"
+            f"sshfs -p {session.ssh_port_on_remote_host}"
             f" {session.container_username}@{remote_host}:/"
             f" {session.sshfs_container_mount_point}",
             cwd=session.local_work_dir,
@@ -601,7 +603,7 @@ def run(
     if session is None:
         return 1
     if session.docker_run_args is not None and not no_default_args:
-        docker_run_args = session.docker_run_args.split() + docker_run_args
+        docker_run_args = session.docker_run_args.split() + list(docker_run_args)
     if ssh_port_on_remote_host is None:
         # TODO: detect a free port
         ssh_port_on_remote_host = 2222
@@ -685,6 +687,55 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
     return 0
 
 
+@cli.command()
+@click.argument("near_path", type=Path)
+@click.argument("far_path", type=Path)
+@click.option("--near_system", type=click.Choice(["local", "remote"]), default="local")
+@click.option("--far_system", type=click.Choice(["remote", "container"]), default="container")
+@click.option("--sshfs", "use_sshfs", is_flag=True, help="Use sshfs instead of mutagen")
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def mount(
+    near_path: Path,
+    far_path: Path,
+    near_system: Literal["local", "remote"],
+    far_system: Literal["remote", "container"],
+    use_sshfs: bool,
+    verbose: bool,
+    dry_run: bool,
+) -> int:
+    """Mount or sync a directory"""
+    set_execution_mode(verbose, dry_run)
+    session = load_session()
+    if session is None:
+        return 1
+    mount_specs = MountSpecs(
+        near_system=near_system,
+        near_path=near_path,
+        far_system=far_system,
+        far_path=far_path,
+        mount_type="sshfs" if use_sshfs else "mutagen",
+    )
+    # FIXME: prevent duplicate mounts
+    if dry_run:
+        prettyprint.action(
+            "local", "Would add mount", str(mount_specs)
+        )
+    else:
+        session.mounts.append(mount_specs)
+        session.save()
+    with prettyprint.LongAction(
+        host="local",
+        running_verb="Mounting" if not dry_run else "Would mount",
+        done_verb="Mounted" if not dry_run else "Would mount",
+        running_message=f"{mount_specs.far_path} to {mount_specs.near_path}",
+    ) as task:
+        ensure_mounts(session)
+        if task:
+            task.set_status("OK")
+    return 0
+
+
 @cli.command(context_settings=dict(ignore_unknown_options=True))
 @click.argument("args", nargs=-1, type=click.UNPROCESSED)
 @click.option("-i", "--interactive", is_flag=True, help="Connect stdin for interactive commands")
@@ -727,6 +778,9 @@ def pwd(verbose: bool, dry_run: bool) -> int:
         session.ssh_port_on_remote_host if session.ssh_port_on_remote_host is not None else 2222
     )
     print(ssh_keyscan(session=session))
+
+    print(get_mutagen_status(session))
+    # debug ends
 
     container_work_dir = get_container_work_dir(session)
     if not container_work_dir:

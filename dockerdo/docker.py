@@ -31,7 +31,7 @@ DOCKERFILES = {
     "alpine": (
         GENERIC_DOCKERFILE,
         {
-            "package_install": "apk add openssh-server",
+            "package_install": "apk add openssh-server openssh-client",
             "shell": "/bin/sh",
         },
     ),
