@@ -11,12 +11,7 @@ from subprocess import Popen, PIPE, DEVNULL, check_output, CalledProcessError
 from typing import Optional, TextIO, Tuple, Literal, List, Union
 
 from dockerdo import prettyprint
-from dockerdo.config import (
-    BaseModel,
-    MutagenMountSpecs,
-    Session,
-    SshfsMountSpecs,
-)
+from dockerdo.config import Session, MountSpecs, BaseModel
 
 verbose = False
 dry_run = False
@@ -349,7 +344,7 @@ def ensure_mounts(session: Session) -> None:
             raise ValueError(f"Unknown mount type {mount_specs.mount_type}")
 
 
-def ensure_sshfs_mount(mount_specs: SshfsMountSpecs, session: Session) -> None:
+def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
     """Ensure that the sshfs mount is active"""
     assert mount_specs.mount_type == "sshfs"
     # check if already mounted
@@ -386,8 +381,10 @@ def ensure_sshfs_mount(mount_specs: SshfsMountSpecs, session: Session) -> None:
             task.set_status("OK")
 
 
-def ensure_mutagen_mount(mount_specs: MutagenMountSpecs, mutagen_status: List[MutagenStatus], session: Session) -> None:
+def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenStatus], session: Session) -> None:
     """Ensure that the mutagen sync is active"""
+    assert mount_specs.mount_type == "mutagen"
+
     # check if already mounted
     for status in mutagen_status:
         if status.identifier == mount_specs.mutagen_id:
@@ -445,7 +442,7 @@ def stop_mounts(session: Session) -> None:
             raise ValueError(f"Unknown mount type {mount_specs.mount_type}")
 
 
-def stop_sshfs_mount(mount_specs: SshfsMountSpecs) -> None:
+def stop_sshfs_mount(mount_specs: MountSpecs) -> None:
     """Unmount the sshfs mount"""
     assert mount_specs.mount_type == "sshfs"
     if not mount_specs.near_path.is_mount():
@@ -460,7 +457,7 @@ def stop_sshfs_mount(mount_specs: SshfsMountSpecs) -> None:
         task.set_status("OK")
 
 
-def stop_mutagen_mount(mount_specs: MutagenMountSpecs) -> None:
+def stop_mutagen_mount(mount_specs: MountSpecs) -> None:
     """Stop the mutagen sync"""
     assert mount_specs.mount_type == "mutagen"
     if mount_specs.mutagen_id is None:
@@ -492,7 +489,7 @@ def remove_mounts(session: Session) -> None:
             raise ValueError(f"Unknown mount type {mount_specs.mount_type}")
 
 
-def remove_mutagen_mount(mount_specs: MutagenMountSpecs) -> None:
+def remove_mutagen_mount(mount_specs: MountSpecs) -> None:
     """Permanently remove the mutagen sync"""
     assert mount_specs.mount_type == "mutagen"
     if mount_specs.mutagen_id is None:
