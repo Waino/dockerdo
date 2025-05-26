@@ -29,7 +29,6 @@ class BaseModel(PydanticBaseModel):
         return yaml.dump(self.model_dump(mode="json", exclude=exclude), sort_keys=True)
 
 
-# TODO: discriminated union to allow status check method
 class MountSpecs(BaseModel):
     near_host: Literal["local", "remote"] = "local"
     near_path: Path

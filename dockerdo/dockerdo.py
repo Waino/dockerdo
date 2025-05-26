@@ -864,7 +864,21 @@ def status(verbose: bool, dry_run: bool) -> int:
             prettyprint.warning(
                 f"Remote host build directory not mounted at {sshfs_remote_mount_point}"
             )
-    # TODO: check all mount points
+    mutagen_status = get_mutagen_status(session)
+    if mutagen_status is None:
+        prettyprint.error("Failed to get mutagen status")
+    for mount_specs in session.mounts:
+        if mount_specs.mount_type == "sshfs":
+            active = mount_specs.near_path.is_mount()
+        elif mount_specs.mount_type == "mutagen":
+            if mutagen_status is None:
+                active = False
+            else:
+                for status in mutagen_status:
+                    if status.identifier == mount_specs.mutagen_id:
+                        active = status.status == "watching"
+        active_str = "Active" if active else "Inactive"
+        prettyprint.info(f"{active_str:s8} {mount_specs.descr_str()}")
 
     # Check status of SSH sockets
     if session.remote_host is not None:
