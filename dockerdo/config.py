@@ -29,6 +29,7 @@ class BaseModel(PydanticBaseModel):
         return yaml.dump(self.model_dump(mode="json", exclude=exclude), sort_keys=True)
 
 
+# TODO: discriminated union to allow status check method
 class MountSpecs(BaseModel):
     near_host: Literal["local", "remote"] = "local"
     near_path: Path
@@ -55,6 +56,31 @@ class MountSpecs(BaseModel):
     def descr_str(self) -> str:
         arrow = ARROWS.get(self.mount_type, '--')
         return f"{self.near_host} {self.near_path} {arrow} {self.far_host} {self.far_path}"
+
+    def get_far_host_name(self, session: "Session") -> str:
+        if self.far_host == "container":
+            return session.container_host_alias
+        elif self.far_host == "remote" and session.remote_host is not None:
+            return session.remote_host
+        else:
+            return "localhost"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, MountSpecs):
+            return False
+        if (
+            self.mutagen_id is not None
+            and other.mutagen_id is not None
+            and self.mutagen_id != other.mutagen_id
+        ):
+            return False
+        return (
+            self.near_host == other.near_host
+            and self.near_path == other.near_path
+            and self.far_host == other.far_host
+            and self.far_path == other.far_path
+            and self.mount_type == other.mount_type
+        )
 
 
 class Preset(BaseModel):
@@ -328,6 +354,7 @@ class Session(BaseModel):
     @property
     def sshfs_container_mount_point(self) -> Path:
         """Get the path on the local host where the container filesystem is mounted"""
+        # FIXME: rethink for new mounts system
         return self.local_work_dir / "container"
 
     def format_activate_script(self) -> str:
@@ -418,3 +445,10 @@ class Session(BaseModel):
     @property
     def container_host_alias(self) -> str:
         return f'dockerdo_{self.name}'
+
+    def add_mount(self, mount_specs: MountSpecs) -> None:
+        # Prevent duplicate mounts
+        if any(mount_specs == m for m in self.mounts):
+            return
+        self.mounts.append(mount_specs)
+        self.save()

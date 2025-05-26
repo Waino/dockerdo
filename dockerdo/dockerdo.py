@@ -20,6 +20,7 @@ from dockerdo.shell import (
     get_container_work_dir,
     get_mutagen_status,
     get_user_config_dir,
+    remove_mounts,
     run_container_command,
     run_docker_save_pipe,
     run_local_command,
@@ -27,6 +28,7 @@ from dockerdo.shell import (
     run_ssh_master_process,
     set_execution_mode,
     ssh_keyscan,
+    stop_mounts,
     verify_container_state,
 )
 from dockerdo.ssh import (
@@ -524,9 +526,6 @@ def run_or_start(
         if task:
             task.set_status("OK")
 
-    remote_host = (
-        session.remote_host if session.remote_host is not None else "localhost"
-    )
     ssh_master_process: Optional[Popen] = None
     if not in_background:
         ctx_mgr = prettyprint.LongAction(
@@ -539,11 +538,7 @@ def run_or_start(
         # sleep to wait for the container to start
         if not dry_run:
             time.sleep(2)
-        ssh_master_process = run_ssh_master_process(
-            session=session,
-            remote_host=remote_host,
-            ssh_port_on_remote_host=session.ssh_port_on_remote_host
-        )
+        ssh_master_process = run_ssh_master_process(session=session)
         # sleep to wait for the ssh master process to start
         if not dry_run:
             time.sleep(2)
@@ -552,29 +547,7 @@ def run_or_start(
         if dry_run:
             task.set_status("OK")
 
-    if not in_background:
-        ctx_mgr = prettyprint.LongAction(
-            host="local",
-            running_verb="Mounting" if not dry_run else "Would mount",
-            done_verb="Mounted" if not dry_run else "Would mount",
-            running_message="container filesystem",
-        )
-    with ctx_mgr as task:
-        if not dry_run:
-            os.makedirs(session.sshfs_container_mount_point, exist_ok=True)
-        retval = run_local_command(
-            f"sshfs -p {session.ssh_port_on_remote_host}"
-            f" {session.container_username}@{remote_host}:/"
-            f" {session.sshfs_container_mount_point}",
-            cwd=session.local_work_dir,
-            silent=in_background,
-        )
-        if retval != 0:
-            return retval
-        if task and session.sshfs_container_mount_point.is_mount():
-            task.set_status("OK")
-        if dry_run:
-            task.set_status("OK")
+    ensure_mounts(session)
 
     session.record_inotify = session.record_inotify or record
     if not dry_run:
@@ -753,7 +726,7 @@ def mount(
     verbose: bool,
     dry_run: bool,
 ) -> int:
-    """Mount or sync a directory"""
+    """Mount (sshfs) or sync (mutagen) a directory"""
     set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
@@ -765,23 +738,14 @@ def mount(
         far_path=far_path,
         mount_type="sshfs" if use_sshfs else "mutagen",
     )
-    # FIXME: prevent duplicate mounts
     if dry_run:
         prettyprint.action(
             "local", "Would add mount", str(mount_specs)
         )
     else:
-        session.mounts.append(mount_specs)
+        session.add_mount(mount_specs)
         session.save()
-    with prettyprint.LongAction(
-        host="local",
-        running_verb="Mounting" if not dry_run else "Would mount",
-        done_verb="Mounted" if not dry_run else "Would mount",
-        running_message=f"{mount_specs.far_path} to {mount_specs.near_path}",
-    ) as task:
-        ensure_mounts(session)
-        if task:
-            task.set_status("OK")
+    ensure_mounts(session)
     return 0
 
 
@@ -942,19 +906,7 @@ def stop(verbose: bool, dry_run: bool) -> int:
     if session is None:
         return 1
 
-    # unmount container filesystem
-    if session.sshfs_container_mount_point.is_mount():
-        with prettyprint.LongAction(
-            host="local",
-            running_verb="Unmounting",
-            done_verb="Unmounted" if not dry_run else "Would unmount",
-            running_message="container filesystem",
-        ) as task:
-            run_local_command(
-                f"fusermount -u {session.sshfs_container_mount_point}",
-                cwd=session.local_work_dir,
-            )
-            task.set_status("OK")
+    stop_mounts(session)
 
     command = f"docker stop {session.container_name}"
     with prettyprint.LongAction(
@@ -1029,6 +981,8 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
                     cwd=session.local_work_dir,
                 )
                 task.set_status("OK")
+
+    remove_mounts(session)
 
     if session.container_state != "nothing":
         force_flag = "-f" if force else ""

@@ -35,19 +35,17 @@ def get_user_config_dir() -> Path:
 def get_container_work_dir(session: Session) -> Optional[Path]:
     """
     Get the container work directory.
-    Remove the prefix corresponding to the sshfs_container_mount_point from the current working directory.
-    If the current working directory is not inside the local work directory, return None.
+    Remove the prefix corresponding to the container mount point from the current working directory.
+    If the current working directory is not inside any mount point, return None.
     """
     current_work_dir = Path(os.getcwd())
-    if current_work_dir.is_relative_to(session.sshfs_container_mount_point):
-        return Path("/") / current_work_dir.relative_to(
-            session.sshfs_container_mount_point
-        )
-    else:
-        return None
+    for mount_specs in session.mounts:
+        if mount_specs.near_host == "local" and current_work_dir.is_relative_to(mount_specs.near_path):
+            return Path("/") / current_work_dir.relative_to(mount_specs.near_path)
+    return None
 
 
-def run_local_command(command: str, cwd: Path, silent: bool = False) -> int:
+def run_local_command(command: str, cwd: Path = Path.cwd(), silent: bool = False) -> int:
     """
     Run a command on the local host, piping through stdin, stdout, and stderr.
     The command may be potentially long-lived and both read and write large amounts of data.
@@ -123,31 +121,17 @@ def run_container_command(command: str, session: Session, interactive: bool = Fa
     container_work_dir = get_container_work_dir(session)
     if not container_work_dir:
         prettyprint.error(
-            f"Current working directory is not inside the container mount point {session.sshfs_container_mount_point}"
+            "Current working directory is not inside any container mount point"
         )
         return 1, Path()
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
     flags = ssh_stdin_flags(interactive, session)
     assert session.ssh_port_on_remote_host is not None
-    if session.remote_host is None:
-        # remote_host is the same as local_host
-        wrapped_command = (
-            f"ssh {flags}"
-            " -o StrictHostKeyChecking=no"
-            f" -p {session.ssh_port_on_remote_host}"
-            f" {session.container_username}@localhost"
-            f' "source {session.env_file_path} && cd {container_work_dir} && {escaped_command}"'
-        )
-    else:
-        # remote_host is different from local_host, so jump via remote_host to container
-        wrapped_command = (
-            f"ssh {flags}"
-            " -o StrictHostKeyChecking=no"
-            f" -J {session.remote_host}"
-            f" -p {session.ssh_port_on_remote_host}"
-            f" {session.container_username}@{session.remote_host}"
-            f' "source {session.env_file_path} && cd {container_work_dir} && {escaped_command}"'
-        )
+    wrapped_command = (
+        f"ssh {flags}"
+        f" {session.container_host_alias}"
+        f' "source {session.env_file_path} && cd {container_work_dir} && {escaped_command}"'
+    )
     cwd = Path(os.getcwd())
     return run_local_command(wrapped_command, cwd=cwd), container_work_dir
 
@@ -233,15 +217,11 @@ def verify_container_state(session: Session) -> bool:
     return acceptable_state == "running"
 
 
-def run_ssh_master_process(session: Session, remote_host: str, ssh_port_on_remote_host: int) -> Optional[Popen]:
+def run_ssh_master_process(session: Session) -> Optional[Popen]:
     """Runs an ssh command with the -M option to create a master connection. This will run indefinitely."""
-    if session.remote_host is None:
-        jump_flag = ""
-    else:
-        jump_flag = f"-J {session.remote_host}"
+    # Note that ssh options, such as the jump host, are set in the dockerdo dynamic ssh config file.
     command = (
-        f"ssh {jump_flag} -M -N -S {session.session_dir}/ssh-socket-container -p {ssh_port_on_remote_host}"
-        f" {session.container_username}@{remote_host} -o StrictHostKeyChecking=no"
+        f"ssh -M -N -S {session.session_dir}/ssh-socket-container {session.container_host_alias}"
     )
     if verbose:
         print(f"+ {command}", file=sys.stderr)
@@ -339,6 +319,7 @@ def ensure_mounts(session: Session) -> None:
     Ensure that the mounts are active.
 
     Idempotent: if a mount is already active, does nothing.
+    Note that this function causes prettyprint.LongAction logging.
     """
     mutagen_status: Optional[List[MutagenStatus]]
     if any(mount_specs.mount_type == "mutagen" for mount_specs in session.mounts):
@@ -371,9 +352,7 @@ def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
         return
 
     # mount
-    remote_host = (
-        session.remote_host if session.remote_host is not None else "localhost"
-    )
+    far_host = mount_specs.get_far_host_name(session)
     ctx_mgr: AbstractContextManager
     if not in_background:
         ctx_mgr = prettyprint.LongAction(
@@ -387,10 +366,9 @@ def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
     with ctx_mgr as task:
         if not dry_run:
             os.makedirs(mount_specs.near_path, exist_ok=True)
-        # FIXME: -p is for container, but also support remote host?
         retval = run_local_command(
-            f"sshfs -p {session.ssh_port_on_remote_host}"
-            f" {session.container_username}@{remote_host}:{mount_specs.far_path}"
+            f"sshfs "
+            f" {far_host}:{mount_specs.far_path}"
             f" {mount_specs.near_path}",
             cwd=session.local_work_dir,
             silent=in_background,
@@ -414,9 +392,7 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
                 return
 
     # mount
-    remote_host = (
-        session.remote_host if session.remote_host is not None else "localhost"
-    )
+    far_host = mount_specs.get_far_host_name(session)
     ctx_mgr: AbstractContextManager
     if not in_background:
         ctx_mgr = prettyprint.LongAction(
@@ -430,12 +406,11 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
     with ctx_mgr as task:
         if not dry_run:
             os.makedirs(mount_specs.near_path, exist_ok=True)
-        # FIXME: -p is for container, but also support remote host?
         # FIXME: parse to get id "Created session sync_..."
         retval = run_local_command(
             f"mutagen sync create"
             f" {mount_specs.near_path}"
-            f" {session.container_username}@{remote_host}:{session.ssh_port_on_remote_host}:{mount_specs.far_path}",
+            f" {far_host}:{mount_specs.far_path}",
             cwd=session.local_work_dir,
             silent=in_background,
         )
@@ -452,20 +427,47 @@ def stop_mounts(session: Session) -> None:
     Stop all mounts.
 
     Idempotent: if a mount is not active, does nothing.
+    Note that this function causes prettyprint.LongAction logging.
     """
-    pass
+    for mount_specs in session.mounts:
+        if mount_specs.mount_type == "sshfs":
+            stop_sshfs_mount(mount_specs)
+        elif mount_specs.mount_type == "mutagen":
+            stop_mutagen_mount(mount_specs)
+        elif mount_specs.mount_type == "docker":
+            pass
+        else:
+            raise ValueError(f"Unknown mount type {mount_specs.mount_type}")
 
 
 def stop_sshfs_mount(mount_specs: MountSpecs) -> None:
     """Unmount the sshfs mount"""
     assert mount_specs.mount_type == "sshfs"
-    pass
+    if not mount_specs.near_path.is_mount():
+        return
+    with prettyprint.LongAction(
+        host="local",
+        running_verb="Unmounting",
+        done_verb="Unmounted" if not dry_run else "Would unmount",
+        running_message="container filesystem",
+    ) as task:
+        run_local_command(f"fusermount -u {mount_specs.near_path}")
+        task.set_status("OK")
 
 
-def stop_mutagen_mount(mount_specs: MountSpecs, mutagen_status: MutagenStatus) -> None:
+def stop_mutagen_mount(mount_specs: MountSpecs) -> None:
     """Stop the mutagen sync"""
     assert mount_specs.mount_type == "mutagen"
-    pass
+    if mount_specs.mutagen_id is None:
+        return
+    with prettyprint.LongAction(
+        host="local",
+        running_verb="Stopping",
+        done_verb="Stopped" if not dry_run else "Would stop",
+        running_message="mutagen sync",
+    ) as task:
+        run_local_command(f"mutagen sync pause {mount_specs.mutagen_id}")
+        task.set_status("OK")
 
 
 def remove_mounts(session: Session) -> None:
@@ -473,12 +475,31 @@ def remove_mounts(session: Session) -> None:
     Permanently remove all mounts.
     """
     pass
+    for mount_specs in session.mounts:
+        if mount_specs.mount_type == "sshfs":
+            # for sshfs stop equals remove
+            stop_sshfs_mount(mount_specs)
+        elif mount_specs.mount_type == "mutagen":
+            remove_mutagen_mount(mount_specs)
+        elif mount_specs.mount_type == "docker":
+            pass
+        else:
+            raise ValueError(f"Unknown mount type {mount_specs.mount_type}")
 
 
-def remove_mutagen_mount(mount_specs: MountSpecs, mutagen_status: MutagenStatus) -> None:
+def remove_mutagen_mount(mount_specs: MountSpecs) -> None:
     """Permanently remove the mutagen sync"""
     assert mount_specs.mount_type == "mutagen"
-    pass
+    if mount_specs.mutagen_id is None:
+        return
+    with prettyprint.LongAction(
+        host="local",
+        running_verb="Stopping",
+        done_verb="Stopped" if not dry_run else "Would stop",
+        running_message="mutagen sync",
+    ) as task:
+        run_local_command(f"mutagen sync terminate {mount_specs.mutagen_id}")
+        task.set_status("OK")
 
 
 def parse_mutagen_status(output: str) -> List[MutagenStatus]:
