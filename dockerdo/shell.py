@@ -406,15 +406,17 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
     with ctx_mgr as task:
         if not dry_run:
             os.makedirs(mount_specs.near_path, exist_ok=True)
-        # FIXME: parse to get id "Created session sync_..."
-        retval = run_local_command(
+        command = (
             f"mutagen sync create"
             f" {mount_specs.near_path}"
-            f" {far_host}:{mount_specs.far_path}",
-            cwd=session.local_work_dir,
-            silent=in_background,
+            f" {far_host}:{mount_specs.far_path}"
         )
-        if retval != 0:
+        try:
+            output = check_output(shlex.split(command), cwd=session.local_work_dir)
+            mount_specs.mutagen_id = output.decode("utf-8").removeprefix("Created session ").strip()
+            session.save()
+        except CalledProcessError as e:
+            prettyprint.error(f"Error running mutagen sync create: {e}")
             raise Exception(f"Failed to mount {mount_specs.descr_str()}")
         if task:
             task.set_status("OK")
