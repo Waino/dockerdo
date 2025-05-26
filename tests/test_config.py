@@ -155,13 +155,13 @@ def test_session_from_opts_override_some():
         remote_delay=0.5,
         record_inotify=True,
         mounts=[
-            MountSpecs(
-                near_host="local",
-                near_path=Path("/tmp/whatever"),
-                far_host="container",
-                far_path=Path("/deep/inside"),
-                mount_type="sshfs"
-            )
+            {
+                "near_host": "local",
+                "near_path": Path("/tmp/whatever"),
+                "far_host": "container",
+                "far_path": Path("/deep/inside"),
+                "mount_type": "sshfs",
+            }
         ],
     )
     with mock.patch(

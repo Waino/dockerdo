@@ -8,11 +8,12 @@ import sys
 import time
 from contextlib import nullcontext, AbstractContextManager
 from pathlib import Path
+from pydantic import TypeAdapter
 from subprocess import Popen
 from typing import Optional, List, Literal
 
 from dockerdo import prettyprint, __version__
-from dockerdo.config import Preset, Session, MountSpecs
+from dockerdo.config import Preset, Session, MountSpecsDiscriminatedUnion
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
     detect_ssh_agent,
@@ -733,12 +734,15 @@ def mount(
     session = load_session()
     if session is None:
         return 1
-    mount_specs = MountSpecs(
-        near_host=near_host,
-        near_path=near_path,
-        far_host=far_host,
-        far_path=far_path,
-        mount_type="sshfs" if use_sshfs else "mutagen",
+    type_adapter: TypeAdapter[MountSpecsDiscriminatedUnion] = TypeAdapter(MountSpecsDiscriminatedUnion)
+    mount_specs: MountSpecsDiscriminatedUnion = type_adapter.validate_python(
+        {
+            "near_host": near_host,
+            "near_path": near_path,
+            "far_host": far_host,
+            "far_path": far_path,
+            "mount_type": "sshfs" if use_sshfs else "mutagen",
+        }
     )
     if dry_run:
         prettyprint.action(
@@ -864,7 +868,13 @@ def status(verbose: bool, dry_run: bool) -> int:
             prettyprint.warning(
                 f"Remote host build directory not mounted at {sshfs_remote_mount_point}"
             )
-    # TODO: check all mount points
+    mutagen_status = get_mutagen_status(session)
+    if mutagen_status is None:
+        prettyprint.error("Failed to get mutagen status")
+    for mount_specs in session.mounts:
+        active = mount_specs.is_active(mutagen_status)
+        active_str = 'active' if active else 'inactive'
+        prettyprint.info(f"{active_str:8s} {mount_specs.descr_str()}")
 
     # Check status of SSH sockets
     if session.remote_host is not None:
