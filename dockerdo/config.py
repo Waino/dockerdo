@@ -269,6 +269,7 @@ class Session(BaseModel):
             remote_host_build_dir=remote_host_build_dir,
             session_dir=session_dir,
             ssh_key_path=ssh_key_path,
+            mounts=preset.mounts,
         )
         return session
 
@@ -351,12 +352,6 @@ class Session(BaseModel):
             return None
         return self.local_work_dir / self.remote_host
 
-    @property
-    def sshfs_container_mount_point(self) -> Path:
-        """Get the path on the local host where the container filesystem is mounted"""
-        # FIXME: rethink for new mounts system
-        return self.local_work_dir / "container"
-
     def format_activate_script(self) -> str:
         """Generate the activate script"""
         result = []
@@ -428,14 +423,13 @@ class Session(BaseModel):
             modified_files = {Path(line.strip()) for line in f}
         return list(sorted(modified_files))
 
-    def write_container_env_file(self, verbose: bool = False) -> None:
-        """Write the container env file to a file inside the container"""
-        path_on_host = self.sshfs_container_mount_point / self.env_file_path.relative_to(Path('/'))
-        if verbose:
-            prettyprint.info(f"Writing container env file to {path_on_host}")
-        with open(path_on_host, "w") as f:
+    def write_env_file(self, path: Optional[Path]) -> None:
+        """Write the container env file"""
+        # Write the env file in a temporary file on the host, then copy it to the container
+        path = path if path else self.session_dir / "env.list"
+        with open(path, "w") as f:
             for key, value in self.env.items():
-                f.write(f"export {key}={value}\n")
+                f.write(f"{key}={value}\n")
 
     @property
     def env_file_path(self) -> Path:

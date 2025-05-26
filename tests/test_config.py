@@ -3,7 +3,7 @@
 from unittest import mock
 from pathlib import Path
 
-from dockerdo.config import Session, Preset
+from dockerdo.config import Session, Preset, MountSpecs
 
 
 def test_session_from_opts_defaults():
@@ -48,7 +48,7 @@ def test_session_from_opts_defaults():
 
     assert session.get_homedir() == Path("/root")
     assert session.sshfs_remote_mount_point is None
-    assert session.sshfs_container_mount_point == Path("/obscure/workdir/container")
+    assert session.mounts == []
     assert session.env_file_path == Path("/tmp/1234a67890.env.list")
     assert session.format_activate_script() == """
 set -x
@@ -120,7 +120,7 @@ def test_session_from_opts_override_all():
 
     assert session.get_homedir() == Path("/home/ubuntu")
     assert session.sshfs_remote_mount_point == Path("/another/workdir/reno")
-    assert session.sshfs_container_mount_point == Path("/another/workdir/container")
+    assert session.mounts == []
     assert session.env_file_path == Path("/tmp/my_session.env.list")
 
     assert session.format_activate_script() == """
@@ -154,6 +154,15 @@ def test_session_from_opts_override_some():
         docker_run_args="--rm",
         remote_delay=0.5,
         record_inotify=True,
+        mounts=[
+            MountSpecs(
+                near_host="local",
+                near_path=Path("/tmp/whatever"),
+                far_host="container",
+                far_path=Path("/deep/inside"),
+                mount_type="sshfs"
+            )
+        ],
     )
     with mock.patch(
         "dockerdo.config.Path.expanduser",
@@ -200,7 +209,15 @@ def test_session_from_opts_override_some():
 
     assert session.get_homedir() == Path("/home/alpine")
     assert session.sshfs_remote_mount_point == Path("/another/workdir/reykjavik")
-    assert session.sshfs_container_mount_point == Path("/another/workdir/container")
+    assert session.mounts == [
+        MountSpecs(
+            near_host="local",
+            near_path=Path("/tmp/whatever"),
+            far_host="container",
+            far_path=Path("/deep/inside"),
+            mount_type="sshfs"
+        )
+    ]
     assert session.env_file_path == Path("/tmp/my_session.env.list")
 
     # test roundtrip

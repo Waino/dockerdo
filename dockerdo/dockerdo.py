@@ -30,6 +30,7 @@ from dockerdo.shell import (
     ssh_keyscan,
     stop_mounts,
     verify_container_state,
+    write_container_env_file,
 )
 from dockerdo.ssh import (
     ensure_known_host_key,
@@ -559,7 +560,8 @@ def run_or_start(
             import dockerdo.inotify
 
             inotify_listener = dockerdo.inotify.InotifyListener(session)
-            inotify_listener.register_listeners()
+            inotify_listener.register_all_listeners()
+            # TODO: enable listening to new mounts created after run
             if not in_background:
                 prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
             try:
@@ -761,7 +763,7 @@ def exec(args: List[str], interactive: bool, verbose: bool, dry_run: bool) -> in
     if session is None:
         return 1
     command = " ".join(args)
-    session.write_container_env_file(verbose=verbose)
+    write_container_env_file(session)
     if session.remote_delay > 0.0:
         time.sleep(session.remote_delay)
     interactive = interactive or session.always_interactive
@@ -798,8 +800,11 @@ def pwd(verbose: bool, dry_run: bool) -> int:
     container_work_dir = get_container_work_dir(session)
     if not container_work_dir:
         prettyprint.warning(
-            f"Current working directory is not inside the container mount point {session.sshfs_container_mount_point}"
+            "Current working directory is not inside any of the container mount points:"
         )
+        for mount_specs in session.mounts:
+            if mount_specs.near_host == "local":
+                prettyprint.info(str(mount_specs.near_path))
         return 1
     prettyprint.info(str(container_work_dir))
     return 0
@@ -859,16 +864,7 @@ def status(verbose: bool, dry_run: bool) -> int:
             prettyprint.warning(
                 f"Remote host build directory not mounted at {sshfs_remote_mount_point}"
             )
-    sshfs_container_mount_point = session.sshfs_container_mount_point
-    if session.container_state == "running":
-        if sshfs_container_mount_point.is_mount():
-            prettyprint.info(
-                f"Container filesystem mounted at {sshfs_container_mount_point}"
-            )
-        else:
-            prettyprint.warning(
-                f"Container filesystem not mounted at {sshfs_container_mount_point}"
-            )
+    # TODO: check all mount points
 
     # Check status of SSH sockets
     if session.remote_host is not None:

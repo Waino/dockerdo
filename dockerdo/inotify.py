@@ -15,15 +15,19 @@ class InotifyListener:
         self.watch_flags = flags.CLOSE_WRITE | flags.UNMOUNT
         self.watch_descriptors: Dict[int, Path] = {}
 
-    def register_listeners(self) -> None:
+    def register_all_listeners(self) -> None:
         """
         Register listeners recursively for the session's container mount point.
         """
         self.inotify = INotify()
-        for path in self.session.sshfs_container_mount_point.rglob("*"):
-            path_inside_container = Path("/") / path.relative_to(
-                self.session.sshfs_container_mount_point
-            )
+        for mount_specs in self.session.mounts:
+            if mount_specs.near_host == "local":
+                self.register_listeners(mount_specs.near_path, mount_specs.far_path)
+
+    def register_listeners(self, near_path: Path, far_path: Path) -> None:
+        assert self.inotify is not None
+        for path in near_path.rglob("*"):
+            path_inside_container = far_path / path.relative_to(near_path)
             if any(path_inside_container.is_relative_to(x) for x in IGNORE_PATHS):
                 continue
             if path.is_dir():

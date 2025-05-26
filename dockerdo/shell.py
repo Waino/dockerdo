@@ -532,3 +532,15 @@ def get_mutagen_status(session: Session) -> Optional[List[MutagenStatus]]:
     except ValidationError as e:
         prettyprint.error(f"Error validating mutagen status: {e}")
         return None
+
+
+def write_container_env_file(session: Session) -> None:
+    """Place the container env file inside the container"""
+    # Write the env file in a temporary file on the host, then copy it to the container
+    tmp_env_file = session.session_dir / "env.list"
+    session.write_env_file(tmp_env_file)
+    # Use scp to copy the file to the container
+    command = f"scp {tmp_env_file} {session.container_host_alias}:{session.env_file_path}"
+    run_local_command(command, cwd=session.local_work_dir, silent=not verbose)
+    # Remove the temporary file
+    tmp_env_file.unlink()
