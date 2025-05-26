@@ -20,6 +20,12 @@ If you love customizing your editor (nvim, emacs, anything goes) and your shell,
 Installation
 ------------
 
+Requirements
+* A properly configured SSH agent for passwordless authentication
+* OpenSSH client tools: ``ssh``, ``sshfs``, ``ssh-keyscan``, ``scp``
+* Docker client tools: ``docker``
+* [Mutagen](https://mutagen.io/documentation/introduction/installation/)
+
 With uv
 
   .. code-block:: bash

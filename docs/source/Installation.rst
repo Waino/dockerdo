@@ -1,5 +1,14 @@
 .. _Installation:
 
+Requirements
+============
+
+* A properly configured SSH agent for passwordless authentication
+* OpenSSH client tools: ``ssh``, ``sshfs``, ``ssh-keyscan``, ``scp``
+* Docker client tools: ``docker``
+* [Mutagen](https://mutagen.io/documentation/introduction/installation/)
+
+
 Installation
 ============
 
