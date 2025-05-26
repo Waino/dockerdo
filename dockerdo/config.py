@@ -12,6 +12,13 @@ from dockerdo.utils import ephemeral_container_name
 from dockerdo import prettyprint
 
 
+ARROWS = {
+    "sshfs": "<-",
+    "mutagen": "<=>",
+    "docker": "->>",
+}
+
+
 class BaseModel(PydanticBaseModel):
     """Extend Pydantic BaseModel with common functionality"""
 
@@ -23,24 +30,31 @@ class BaseModel(PydanticBaseModel):
 
 
 class MountSpecs(BaseModel):
-    near_system: Literal["local", "remote"] = "local"
+    near_host: Literal["local", "remote"] = "local"
     near_path: Path
-    far_system: Literal["remote", "container"] = "container"
+    far_host: Literal["remote", "container"] = "container"
     far_path: Path
     mount_type: Literal["sshfs", "mutagen", "docker"]
     # mutagen_id is None if not a mutagen mount, or if not yet created
     mutagen_id: Optional[str] = None
 
     @model_validator(mode='after')
-    def check_systems(self) -> "MountSpecs":
+    def check_hosts(self) -> "MountSpecs":
         if self.mount_type == "docker":
-            if self.near_system != "remote" or self.far_system != "container":
+            if self.near_host != "remote" or self.far_host != "container":
                 raise ValueError("docker mount can only be from remote to container")
-        if self.near_system == "remote" and self.far_system == "remote":
+        if self.near_host == "remote" and self.far_host == "remote":
             raise ValueError("can't mount from remote to remote")
         if self.mutagen_id is not None and self.mount_type != "mutagen":
             raise ValueError("mutagen_id can only be set if mount_type is mutagen")
+        # TODO: implement sshfs and mutagen remote <-> container mounts
+        if self.near_host == "remote" and self.mount_type != "docker":
+            raise ValueError("currently only docker type remote -> container mount supported")
         return self
+
+    def descr_str(self) -> str:
+        arrow = ARROWS.get(self.mount_type, '--')
+        return f"{self.near_host} {self.near_path} {arrow} {self.far_host} {self.far_path}"
 
 
 class Preset(BaseModel):
@@ -400,3 +414,7 @@ class Session(BaseModel):
     def env_file_path(self) -> Path:
         """Path of the env file within the container"""
         return Path("/tmp") / f"{self.name}.env.list"
+
+    @property
+    def container_host_alias(self) -> str:
+        return f'dockerdo_{self.name}'

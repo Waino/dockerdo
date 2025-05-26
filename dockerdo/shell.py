@@ -380,7 +380,7 @@ def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
             host="local",
             running_verb="Mounting" if not dry_run else "Would mount",
             done_verb="Mounted" if not dry_run else "Would mount",
-            running_message=f"{mount_specs.far_path} to {mount_specs.near_path}",
+            running_message=mount_specs.descr_str(),
         )
     else:
         ctx_mgr = nullcontext()
@@ -396,8 +396,8 @@ def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
             silent=in_background,
         )
         if retval != 0:
-            raise Exception(f"Failed to mount {mount_specs.far_path} to {mount_specs.near_path}")
-        if task and session.sshfs_container_mount_point.is_mount():
+            raise Exception(f"Failed to mount {mount_specs.descr_str()}")
+        if task and mount_specs.near_path.is_mount():
             task.set_status("OK")
         if dry_run:
             task.set_status("OK")
@@ -423,7 +423,7 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
             host="local",
             running_verb="Mounting" if not dry_run else "Would mount",
             done_verb="Mounted" if not dry_run else "Would mount",
-            running_message=f"{mount_specs.far_path} to {mount_specs.near_path}",
+            running_message=mount_specs.descr_str(),
         )
     else:
         ctx_mgr = nullcontext()
@@ -440,8 +440,8 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
             silent=in_background,
         )
         if retval != 0:
-            raise Exception(f"Failed to mount {mount_specs.far_path} to {mount_specs.near_path}")
-        if task and session.sshfs_container_mount_point.is_mount():
+            raise Exception(f"Failed to mount {mount_specs.descr_str()}")
+        if task:
             task.set_status("OK")
         if dry_run:
             task.set_status("OK")

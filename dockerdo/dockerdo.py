@@ -29,7 +29,13 @@ from dockerdo.shell import (
     ssh_keyscan,
     verify_container_state,
 )
-from dockerdo.ssh import ensure_known_host_key, remove_known_host_key
+from dockerdo.ssh import (
+    ensure_known_host_key,
+    ensure_session_in_ssh_config,
+    remove_known_host_key,
+    remove_session_from_ssh_config,
+    SSH_INCLUDE_BLOCK,
+)
 from dockerdo.utils import make_image_tag
 
 
@@ -64,10 +70,11 @@ def cli() -> None:
 
 
 @click.option("--no-bashrc", is_flag=True, help="Do not modify ~/.bashrc")
+@click.option("--no-ssh-config", is_flag=True, help="Do not modify ~/.ssh/config")
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 @cli.command()
-def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
+def install(no_bashrc: bool, no_ssh_config: bool, verbose: bool, dry_run: bool) -> int:
     """Install dockerdo"""
     set_execution_mode(verbose, dry_run)
     # Create the user config file
@@ -120,6 +127,34 @@ def install(no_bashrc: bool, verbose: bool, dry_run: bool) -> int:
                     )
             task.set_status("OK")
         prettyprint.info("Remember to restart bash or source ~/.bashrc")
+
+    # Add the command to include the dockerdo dynamic host blocks to the end of the main ssh config
+    include_str = "Include ~/.ssh/config.dockerdo"
+    main_ssh_config_path = Path("~/.ssh/config").expanduser()
+    # Check if the include statement is already in the main ssh config
+    already_included = False
+    if main_ssh_config_path.exists():
+        with main_ssh_config_path.open("r") as fin:
+            if include_str in fin.read():
+                prettyprint.info("SSH config already includes dockerdo dynamic hosts")
+                already_included = True
+    if not already_included:
+        if no_ssh_config:
+            prettyprint.warning(
+                "Not modifying ~/.ssh/config. "
+                "Please manually add the following line to ~/.ssh/config.dockerdo:"
+            )
+            print(include_str)
+        else:
+            with prettyprint.LongAction(
+                host="local",
+                running_verb="Modifying",
+                done_verb="Modified" if not dry_run else "Would modify",
+                running_message="~/.ssh/config",
+            ) as task:
+                if not dry_run:
+                    with Path("~/.ssh/config").expanduser().open("a") as fout:
+                        fout.write(f"\n{SSH_INCLUDE_BLOCK}\n")
     return 0
 
 
@@ -475,6 +510,20 @@ def run_or_start(
         if task:
             task.set_status("OK")
 
+    if in_background:
+        ctx_mgr = nullcontext()
+    else:
+        ctx_mgr = prettyprint.LongAction(
+            host="local",
+            running_verb="Adding" if not dry_run else "Would add",
+            done_verb="Added" if not dry_run else "Would add",
+            running_message=f"container alias '{session.container_host_alias}' to ssh config",
+        )
+    with ctx_mgr as task:
+        ensure_session_in_ssh_config(session)
+        if task:
+            task.set_status("OK")
+
     remote_host = (
         session.remote_host if session.remote_host is not None else "localhost"
     )
@@ -690,16 +739,16 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
 @cli.command()
 @click.argument("near_path", type=Path)
 @click.argument("far_path", type=Path)
-@click.option("--near_system", type=click.Choice(["local", "remote"]), default="local")
-@click.option("--far_system", type=click.Choice(["remote", "container"]), default="container")
+@click.option("--near_host", type=click.Choice(["local", "remote"]), default="local")
+@click.option("--far_host", type=click.Choice(["remote", "container"]), default="container")
 @click.option("--sshfs", "use_sshfs", is_flag=True, help="Use sshfs instead of mutagen")
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def mount(
     near_path: Path,
     far_path: Path,
-    near_system: Literal["local", "remote"],
-    far_system: Literal["remote", "container"],
+    near_host: Literal["local", "remote"],
+    far_host: Literal["remote", "container"],
     use_sshfs: bool,
     verbose: bool,
     dry_run: bool,
@@ -710,9 +759,9 @@ def mount(
     if session is None:
         return 1
     mount_specs = MountSpecs(
-        near_system=near_system,
+        near_host=near_host,
         near_path=near_path,
-        far_system=far_system,
+        far_host=far_host,
         far_path=far_path,
         mount_type="sshfs" if use_sshfs else "mutagen",
     )
@@ -958,7 +1007,7 @@ def history(verbose: bool, dry_run: bool) -> int:
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
     """Remove a container"""
-    set_execution_mode(verbose, dry_run)
+    in_background = set_execution_mode(verbose, dry_run)
     session = load_session()
     if session is None:
         return 1
@@ -1000,7 +1049,34 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
             session.save()
             task.set_status("OK")
 
-    remove_known_host_key(session)
+    ctx_mgr: AbstractContextManager
+    if in_background:
+        ctx_mgr = nullcontext()
+    else:
+        ctx_mgr = prettyprint.LongAction(
+            host="local",
+            running_verb="Removing" if not dry_run else "Would remove",
+            done_verb="Removed" if not dry_run else "Would remove",
+            running_message="container host key from known_hosts",
+        )
+    with ctx_mgr as task:
+        remove_known_host_key(session)
+        if task:
+            task.set_status("OK")
+
+    if in_background:
+        ctx_mgr = nullcontext()
+    else:
+        ctx_mgr = prettyprint.LongAction(
+            host="local",
+            running_verb="Removing" if not dry_run else "Would remove",
+            done_verb="Removed" if not dry_run else "Would remove",
+            running_message=f"container alias '{session.container_host_alias}' from ssh config",
+        )
+    with ctx_mgr as task:
+        remove_session_from_ssh_config(session)
+        if task:
+            task.set_status("OK")
 
     if delete:
         # Delete the image

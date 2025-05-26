@@ -1,7 +1,33 @@
+from copy import deepcopy
 from pathlib import Path
+from typing import Dict, List
+import re
 
 from dockerdo.config import Session
 from dockerdo.shell import ssh_keyscan
+
+RE_LEADING_SPACE = re.compile(r"^\s*")
+
+# HostName is always localhost: when running locally the container is on localhost,
+# and when running remotely we jump to the remote host and from there on to the container port published by docker
+HOST_BLOCK = """
+Host {session.host_name}
+    HostName localhost
+    Port {session.ssh_port_on_remote_host}
+    User {session.container_user}
+    StrictHostKeyChecking no
+    IdentityFile {session.ssh_key_path}
+    UserKnownHostsFile /dev/null
+""".strip()
+
+PROXY_JUMP_BLOCK = "    ProxyJump {session.remote_host}"
+
+SSH_INCLUDE_BLOCK = """
+# Dynamic host blocks. Added by dockerdo
+Include ~/.ssh/config.dockerdo
+""".strip()
+
+DEFAULT_SSH_CONFIG_PATH = Path("~/.ssh/config.dockerdo")
 
 
 def ensure_known_host_key(session: Session) -> None:
@@ -36,3 +62,85 @@ def remove_known_host_key(session: Session) -> None:
     with known_hosts_path.open("w") as fout:
         for kept_line in kept_lines:
             fout.write(kept_line)
+
+
+def parse_ssh_config(
+    ssh_config_path: Path = DEFAULT_SSH_CONFIG_PATH,
+) -> Dict[str, List[str]]:
+    """Parse the ssh config file into host blocks"""
+    ssh_config_path = ssh_config_path.expanduser()
+    if not ssh_config_path.exists():
+        return {}
+    host_name = None
+    host_blocks = {}
+    with ssh_config_path.open("r") as fin:
+        for line in fin:
+            if len(line.strip()) == 0 or line.startswith("#"):
+                continue
+            leading_spaces = RE_LEADING_SPACE.match(line)
+            assert leading_spaces is not None   # due to Kleene star
+            n_leading_spaces = len(leading_spaces.group())
+            if n_leading_spaces == 0:
+                cmd, host_name = line.split()
+                if not cmd == 'Host':
+                    raise ValueError(f"Expected Host, got {cmd!r} in {line!r}")
+                host_blocks[host_name] = [line]
+            else:
+                if host_name is None:
+                    raise ValueError(f"Found indented line {line!r} before any host block")
+                host_blocks[host_name].append(line)
+    return host_blocks
+
+
+def add_session_to_ssh_config(host_blocks: Dict[str, List[str]], session: Session) -> Dict[str, List[str]]:
+    """
+    Add the session to the ssh config file.
+
+    If the session already exists, overwrite it.
+    Returns True if the session was overwritten.
+    """
+    host_blocks = deepcopy(host_blocks)
+    host_blocks[session.container_host_alias] = HOST_BLOCK.format(session=session).split("\n")
+    if session.remote_host is not None:
+        host_blocks[session.remote_host].append(
+            PROXY_JUMP_BLOCK.format(session=session)
+        )
+    return host_blocks
+
+
+def write_ssh_config(
+    host_blocks: Dict[str, List[str]],
+    ssh_config_path: Path = DEFAULT_SSH_CONFIG_PATH,
+) -> None:
+    with ssh_config_path.open("w") as fout:
+        for host_name, block in host_blocks.items():
+            fout.writelines(block)
+            fout.write("\n")
+
+
+def ensure_session_in_ssh_config(
+    session: Session,
+    ssh_config_path: Path = DEFAULT_SSH_CONFIG_PATH,
+) -> bool:
+    """
+    Add the session to the ssh config file.
+
+    If the session already exists, overwrite it.
+    Returns True if the session was overwritten.
+    """
+    host_blocks = parse_ssh_config()
+    overwritten = session.container_host_alias in host_blocks
+    host_blocks = add_session_to_ssh_config(host_blocks, session)
+    write_ssh_config(host_blocks)
+    return overwritten
+
+
+def remove_session_from_ssh_config(
+    session: Session,
+    ssh_config_path: Path = DEFAULT_SSH_CONFIG_PATH,
+) -> None:
+    host_blocks = parse_ssh_config()
+    if session.container_host_alias not in host_blocks:
+        return
+    del host_blocks[session.container_host_alias]
+    write_ssh_config(host_blocks)
