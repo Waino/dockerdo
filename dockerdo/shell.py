@@ -7,7 +7,7 @@ import sys
 from contextlib import nullcontext, AbstractContextManager
 from pathlib import Path
 from pydantic import ValidationError, Field
-from subprocess import Popen, PIPE, DEVNULL, check_output, CalledProcessError
+from subprocess import Popen, PIPE, DEVNULL, check_output, check_call, CalledProcessError
 from typing import Optional, TextIO, Tuple, Literal, List, Union
 
 from dockerdo import prettyprint
@@ -546,3 +546,15 @@ def write_container_env_file(session: Session) -> None:
     run_local_command(command, cwd=session.local_work_dir, silent=not verbose)
     # Remove the temporary file
     tmp_env_file.unlink()
+
+
+def confirm_tool_installed(tool_name: str) -> bool:
+    """Check if a tool is installed"""
+    if verbose:
+        print(f"+ which {tool_name}", file=sys.stderr)
+    if dry_run:
+        return True
+    try:
+        return check_call(["which", tool_name], stdout=DEVNULL, stderr=DEVNULL) == 0
+    except CalledProcessError:
+        return False

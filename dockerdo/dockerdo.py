@@ -15,6 +15,7 @@ from dockerdo import prettyprint, __version__
 from dockerdo.config import Preset, Session, MountSpecs
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
+    confirm_tool_installed,
     detect_ssh_agent,
     ensure_mounts,
     get_container_work_dir,
@@ -80,6 +81,15 @@ def cli() -> None:
 def install(no_bashrc: bool, no_ssh_config: bool, verbose: bool, dry_run: bool) -> int:
     """Install dockerdo"""
     set_execution_mode(verbose, dry_run)
+
+    # Check requirements
+    for tool in ["docker", "mutagen", "ssh", "sshfs", "ssh-keyscan", "scp"]:
+        if confirm_tool_installed(tool):
+            prettyprint.info(f"Found required tool: {tool}")
+        else:
+            prettyprint.error(f"Missing required tool: {tool}")
+            return 1
+
     # Create the user config file
     user_config_dir = get_user_config_dir()
     if not dry_run:
