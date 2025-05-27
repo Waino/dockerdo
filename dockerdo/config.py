@@ -54,7 +54,7 @@ class MountSpecs(BaseModel):
 
     def descr_str(self) -> str:
         arrow = ARROWS.get(self.mount_type, '--')
-        return f"{self.near_host} {self.near_path} {arrow} {self.far_host} {self.far_path}"
+        return f"{self.near_host}:{self.near_path} {arrow} {self.far_host}:{self.far_path}"
 
     def get_far_host_name(self, session: "Session") -> str:
         if self.far_host == "container":

@@ -11,10 +11,10 @@ RE_LEADING_SPACE = re.compile(r"^\s*")
 # HostName is always localhost: when running locally the container is on localhost,
 # and when running remotely we jump to the remote host and from there on to the container port published by docker
 HOST_BLOCK = """
-Host {session.host_name}
-    HostName localhost
+Host {session.container_host_alias}
+    Hostname localhost
     Port {session.ssh_port_on_remote_host}
-    User {session.container_user}
+    User {session.container_username}
     StrictHostKeyChecking no
     IdentityFile {session.ssh_key_path}
     UserKnownHostsFile /dev/null
@@ -24,7 +24,8 @@ PROXY_JUMP_BLOCK = "    ProxyJump {session.remote_host}"
 
 SSH_INCLUDE_BLOCK = """
 # Dynamic host blocks. Added by dockerdo
-Include ~/.ssh/config.dockerdo
+Host dockerdo_*
+    Include ~/.ssh/config.dockerdo
 """.strip()
 
 DEFAULT_SSH_CONFIG_PATH = Path("~/.ssh/config.dockerdo")
@@ -112,9 +113,11 @@ def write_ssh_config(
     host_blocks: Dict[str, List[str]],
     ssh_config_path: Path = DEFAULT_SSH_CONFIG_PATH,
 ) -> None:
+    ssh_config_path = ssh_config_path.expanduser()
     with ssh_config_path.open("w") as fout:
         for host_name, block in host_blocks.items():
-            fout.writelines(block)
+            for line in block:
+                fout.write(f"{line}\n")
             fout.write("\n")
 
 
@@ -128,10 +131,11 @@ def ensure_session_in_ssh_config(
     If the session already exists, overwrite it.
     Returns True if the session was overwritten.
     """
-    host_blocks = parse_ssh_config()
+    ssh_config_path = ssh_config_path.expanduser()
+    host_blocks = parse_ssh_config(ssh_config_path)
     overwritten = session.container_host_alias in host_blocks
     host_blocks = add_session_to_ssh_config(host_blocks, session)
-    write_ssh_config(host_blocks)
+    write_ssh_config(host_blocks, ssh_config_path)
     return overwritten
 
 
@@ -139,8 +143,9 @@ def remove_session_from_ssh_config(
     session: Session,
     ssh_config_path: Path = DEFAULT_SSH_CONFIG_PATH,
 ) -> None:
-    host_blocks = parse_ssh_config()
+    ssh_config_path = ssh_config_path.expanduser()
+    host_blocks = parse_ssh_config(ssh_config_path)
     if session.container_host_alias not in host_blocks:
         return
     del host_blocks[session.container_host_alias]
-    write_ssh_config(host_blocks)
+    write_ssh_config(host_blocks, ssh_config_path)

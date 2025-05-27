@@ -28,7 +28,6 @@ from dockerdo.shell import (
     run_remote_command,
     run_ssh_master_process,
     set_execution_mode,
-    ssh_keyscan,
     stop_mounts,
     verify_container_state,
     write_container_env_file,
@@ -84,11 +83,17 @@ def install(no_bashrc: bool, no_ssh_config: bool, verbose: bool, dry_run: bool) 
 
     # Check requirements
     for tool in ["docker", "mutagen", "ssh", "sshfs", "ssh-keyscan", "scp"]:
-        if confirm_tool_installed(tool):
-            prettyprint.info(f"Found required tool: {tool}")
-        else:
-            prettyprint.error(f"Missing required tool: {tool}")
-            return 1
+        with prettyprint.LongAction(
+            host="local",
+            running_verb="Checking",
+            done_verb="Checked" if not dry_run else "Would check",
+            running_message=f"for required tool {tool}",
+        ) as task:
+            if confirm_tool_installed(tool):
+                task.set_status("OK")
+            else:
+                task.set_status("FAIL")
+                return 1
 
     # Create the user config file
     user_config_dir = get_user_config_dir()
@@ -168,6 +173,7 @@ def install(no_bashrc: bool, no_ssh_config: bool, verbose: bool, dry_run: bool) 
                 if not dry_run:
                     with Path("~/.ssh/config").expanduser().open("a") as fout:
                         fout.write(f"\n{SSH_INCLUDE_BLOCK}\n")
+                task.set_status("OK")
     return 0
 
 
@@ -533,7 +539,8 @@ def run_or_start(
             running_message=f"container alias '{session.container_host_alias}' to ssh config",
         )
     with ctx_mgr as task:
-        ensure_session_in_ssh_config(session)
+        if not dry_run:
+            ensure_session_in_ssh_config(session)
         if task:
             task.set_status("OK")
 
@@ -566,20 +573,26 @@ def run_or_start(
         session.save()
 
     if session.record_inotify:
-        if not dry_run:
-            import dockerdo.inotify
+        if not in_background:
+            ctx_mgr = prettyprint.LongAction(
+                host="local",
+                running_verb="Recording" if not dry_run else "Would record",
+                done_verb="Recording" if not dry_run else "Would record",
+                running_message="filesystem events. Runs indefinitely: remember to background this process.",
+            )
+        with ctx_mgr as task:
+            if not dry_run:
+                import dockerdo.inotify
 
-            inotify_listener = dockerdo.inotify.InotifyListener(session)
-            inotify_listener.register_all_listeners()
-            # TODO: enable listening to new mounts created after run
-            if not in_background:
-                prettyprint.info("Recording filesystem events. Runs indefinitely: remember to background this process.")
-            try:
-                inotify_listener.listen(verbose=verbose)
-            except OSError as e:
-                prettyprint.error(f"No longer listening to filesystem events due to error: {e}")
-        else:
-            prettyprint.info("Would record filesystem events")
+                inotify_listener = dockerdo.inotify.InotifyListener(session)
+                inotify_listener.register_all_listeners()
+                # TODO: enable listening to new mounts created after run
+                try:
+                    inotify_listener.listen(verbose=verbose)
+                except OSError as e:
+                    prettyprint.error(f"No longer listening to filesystem events due to error: {e}")
+            if task:
+                task.set_status("OK")
 
     if ssh_master_process is None:
         return 1
@@ -798,15 +811,6 @@ def pwd(verbose: bool, dry_run: bool) -> int:
     session = load_session()
     assert session is not None
 
-    # debug
-    session.ssh_port_on_remote_host = (
-        session.ssh_port_on_remote_host if session.ssh_port_on_remote_host is not None else 2222
-    )
-    print(ssh_keyscan(session=session))
-
-    print(get_mutagen_status(session))
-    # debug ends
-
     container_work_dir = get_container_work_dir(session)
     if not container_work_dir:
         prettyprint.warning(
@@ -816,7 +820,7 @@ def pwd(verbose: bool, dry_run: bool) -> int:
             if mount_specs.near_host == "local":
                 prettyprint.info(str(mount_specs.near_path))
         return 1
-    prettyprint.info(str(container_work_dir))
+    print(container_work_dir)
     return 0
 
 
@@ -875,7 +879,7 @@ def status(verbose: bool, dry_run: bool) -> int:
                 f"Remote host build directory not mounted at {sshfs_remote_mount_point}"
             )
     mutagen_status = get_mutagen_status(session)
-    if mutagen_status is None:
+    if mutagen_status is None and not dry_run:
         prettyprint.error("Failed to get mutagen status")
     for mount_specs in session.mounts:
         if mount_specs.mount_type == "sshfs":
@@ -888,7 +892,7 @@ def status(verbose: bool, dry_run: bool) -> int:
                     if status.identifier == mount_specs.mutagen_id:
                         active = status.status == "watching"
         active_str = "Active" if active else "Inactive"
-        prettyprint.info(f"{active_str:s8} {mount_specs.descr_str()}")
+        prettyprint.info(f"{active_str:8s}:  {mount_specs.descr_str()}")
 
     # Check status of SSH sockets
     if session.remote_host is not None:

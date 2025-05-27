@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import shlex
 import sys
 from contextlib import nullcontext, AbstractContextManager
@@ -12,6 +13,9 @@ from typing import Optional, TextIO, Tuple, Literal, List, Union
 
 from dockerdo import prettyprint
 from dockerdo.config import Session, MountSpecs, BaseModel
+
+RE_MUTAGEN_ID = re.compile(r"Created session (\S+)")
+
 
 verbose = False
 dry_run = False
@@ -40,8 +44,9 @@ def get_container_work_dir(session: Session) -> Optional[Path]:
     """
     current_work_dir = Path(os.getcwd())
     for mount_specs in session.mounts:
-        if mount_specs.near_host == "local" and current_work_dir.is_relative_to(mount_specs.near_path):
-            return Path("/") / current_work_dir.relative_to(mount_specs.near_path)
+        absolute_near_path = session.local_work_dir / mount_specs.near_path
+        if mount_specs.near_host == "local" and current_work_dir.is_relative_to(absolute_near_path):
+            return mount_specs.far_path / current_work_dir.relative_to(absolute_near_path)
     return None
 
 
@@ -297,9 +302,9 @@ class MutagenEndpointLocal(BaseModel):
 class MutagenEndpointSsh(BaseModel):
     protocol: Literal["ssh"] = "ssh"
     path: Path
-    user: str
+    user: Optional[str] = None
     host: str
-    port: int
+    port: Optional[int] = None
     directories: int = 0
     files: int = 0
     symbolicLinks: int = 0
@@ -381,6 +386,16 @@ def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
             task.set_status("OK")
 
 
+def parse_mutagen_id(output: str) -> str:
+    """Parse the mutagen id from the output of mutagen sync create"""
+    for line in output.replace("\r", "\n").split("\n"):
+        line = line.strip()
+        m = RE_MUTAGEN_ID.match(line)
+        if m:
+            return m.group(1)
+    raise ValueError(f"Failed to parse mutagen id from '{output!r}'")
+
+
 def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenStatus], session: Session) -> None:
     """Ensure that the mutagen sync is active"""
     assert mount_specs.mount_type == "mutagen"
@@ -413,7 +428,7 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
         )
         try:
             output = check_output(shlex.split(command), cwd=session.local_work_dir)
-            mount_specs.mutagen_id = output.decode("utf-8").removeprefix("Created session ").strip()
+            mount_specs.mutagen_id = parse_mutagen_id(output.decode("utf-8"))
             session.save()
         except CalledProcessError as e:
             prettyprint.error(f"Error running mutagen sync create: {e}")
@@ -532,7 +547,7 @@ def get_mutagen_status(session: Session) -> Optional[List[MutagenStatus]]:
         prettyprint.error(f"Error decoding mutagen status: {e}")
         return None
     except ValidationError as e:
-        prettyprint.error(f"Error validating mutagen status: {e}")
+        prettyprint.error(f"Error validating mutagen status '{output!r}': {e}")
         return None
 
 
