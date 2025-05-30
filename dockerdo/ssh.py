@@ -11,13 +11,19 @@ RE_LEADING_SPACE = re.compile(r"^\s*")
 # HostName is always localhost: when running locally the container is on localhost,
 # and when running remotely we jump to the remote host and from there on to the container port published by docker
 HOST_BLOCK = """
-Host {session.container_host_alias}
+Host {session.container_host_alias}*
     Hostname localhost
     Port {session.ssh_port_on_remote_host}
     User {session.container_username}
     StrictHostKeyChecking no
     IdentityFile {session.ssh_key_path}
     UserKnownHostsFile /dev/null
+""".strip()
+
+# Mutagen would fail to connect to the container unless the ControlPath is set in the ssh config
+HOST_BLOCK_WITH_SOCKET = """
+Host {session.container_host_alias}_socket
+    ControlPath {session.session_dir}/ssh-socket-container
 """.strip()
 
 PROXY_JUMP_BLOCK = "    ProxyJump {session.remote_host}"
@@ -102,8 +108,9 @@ def add_session_to_ssh_config(host_blocks: Dict[str, List[str]], session: Sessio
     """
     host_blocks = deepcopy(host_blocks)
     host_blocks[session.container_host_alias] = HOST_BLOCK.format(session=session).split("\n")
+    host_blocks[f"{session.container_host_alias}_socket"] = HOST_BLOCK_WITH_SOCKET.format(session=session).split("\n")
     if session.remote_host is not None:
-        host_blocks[session.remote_host].append(
+        host_blocks[session.container_host_alias].append(
             PROXY_JUMP_BLOCK.format(session=session)
         )
     return host_blocks
@@ -145,7 +152,12 @@ def remove_session_from_ssh_config(
 ) -> None:
     ssh_config_path = ssh_config_path.expanduser()
     host_blocks = parse_ssh_config(ssh_config_path)
-    if session.container_host_alias not in host_blocks:
+    n_keys = len(host_blocks)
+    if session.container_host_alias in host_blocks:
+        del host_blocks[session.container_host_alias]
+    if f"{session.container_host_alias}_socket" in host_blocks:
+        del host_blocks[f"{session.container_host_alias}_socket"]
+    if len(host_blocks) == n_keys:
+        # Nothing was removed
         return
-    del host_blocks[session.container_host_alias]
     write_ssh_config(host_blocks, ssh_config_path)

@@ -56,9 +56,9 @@ class MountSpecs(BaseModel):
         arrow = ARROWS.get(self.mount_type, '--')
         return f"{self.near_host}:{self.near_path} {arrow} {self.far_host}:{self.far_path}"
 
-    def get_far_host_name(self, session: "Session") -> str:
+    def get_far_host_name(self, session: "Session", suffix: str = "") -> str:
         if self.far_host == "container":
-            return session.container_host_alias
+            return session.container_host_alias + suffix
         elif self.far_host == "remote" and session.remote_host is not None:
             return session.remote_host
         else:

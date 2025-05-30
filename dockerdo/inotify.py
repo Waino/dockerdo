@@ -15,13 +15,15 @@ class InotifyListener:
         self.watch_flags = flags.CLOSE_WRITE | flags.UNMOUNT
         self.watch_descriptors: Dict[int, Path] = {}
 
-    def register_all_listeners(self) -> None:
+    def register_all_listeners(self, verbose: bool = False) -> None:
         """
         Register listeners recursively for the session's container mount point.
         """
         self.inotify = INotify()
         for mount_specs in self.session.mounts:
             if mount_specs.near_host == "local":
+                if verbose:
+                    prettyprint.info(f"Registering listeners for {mount_specs.near_path}")
                 self.register_listeners(mount_specs.near_path, mount_specs.far_path)
 
     def register_listeners(self, near_path: Path, far_path: Path) -> None:

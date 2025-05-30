@@ -2,9 +2,11 @@
 
 import json
 import os
+import random
 import re
 import shlex
 import sys
+import time
 from contextlib import nullcontext, AbstractContextManager
 from pathlib import Path
 from pydantic import ValidationError, Field
@@ -15,6 +17,8 @@ from dockerdo import prettyprint
 from dockerdo.config import Session, MountSpecs, BaseModel
 
 RE_MUTAGEN_ID = re.compile(r"Created session (\S+)")
+RE_MULTISPACE = re.compile(r"\s+")
+DEFAULT_HIGH_SSH_PORT = 2222
 
 
 verbose = False
@@ -222,7 +226,7 @@ def verify_container_state(session: Session) -> bool:
     return acceptable_state == "running"
 
 
-def run_ssh_master_process(session: Session) -> Optional[Popen]:
+def run_ssh_master_process(session: Session, repeats: int = 1) -> Optional[Popen]:
     """Runs an ssh command with the -M option to create a master connection. This will run indefinitely."""
     # Note that ssh options, such as the jump host, are set in the dockerdo dynamic ssh config file.
     command = (
@@ -231,13 +235,21 @@ def run_ssh_master_process(session: Session) -> Optional[Popen]:
     if verbose:
         print(f"+ {command}", file=sys.stderr)
     if not dry_run:
-        try:
-            return Popen(
-                shlex.split(command), stdin=None, stdout=None, stderr=None, cwd=session.local_work_dir
-            )
-        except CalledProcessError as e:
-            prettyprint.error(f"Error running ssh master process: {e}")
-            return None
+        failed_attempts = 0
+        for _ in range(repeats):
+            try:
+                return Popen(
+                    shlex.split(command), stdin=None, stdout=None, stderr=None, cwd=session.local_work_dir
+                )
+            except CalledProcessError as e:
+                failed_attempts += 1
+                if failed_attempts == repeats:
+                    prettyprint.error(f"Error running ssh master process: {e}")
+                    return None
+                else:
+                    time.sleep(2)
+                    continue
+        return None
     else:
         return None
 
@@ -329,11 +341,13 @@ def ensure_mounts(session: Session) -> None:
     mutagen_status: Optional[List[MutagenStatus]]
     if any(mount_specs.mount_type == "mutagen" for mount_specs in session.mounts):
         mutagen_status = get_mutagen_status(session)
-        if dry_run:
-            return
         if mutagen_status is None:
-            prettyprint.error("Failed to get mutagen status")
-            return
+            if not dry_run:
+                prettyprint.error("Failed to get mutagen status")
+                return
+            else:
+                # Dummy value of no active mounts will show all mount commands in dryrun
+                mutagen_status = []
     else:
         mutagen_status = None
     for mount_specs in session.mounts:
@@ -386,6 +400,28 @@ def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
             task.set_status("OK")
 
 
+def get_all_docker_mount_args(session: Session) -> List[str]:
+    """Get all docker mount arguments"""
+    result = []
+    for mount_specs in session.mounts:
+        if mount_specs.mount_type == "docker":
+            result.extend(get_docker_mount_args(mount_specs, session))
+    return result
+
+
+def get_docker_mount_args(mount_specs: MountSpecs, session: Session) -> List[str]:
+    """Get the docker mount arguments"""
+    assert mount_specs.mount_type == "docker"
+    if mount_specs.near_path.is_absolute():
+        near_path = mount_specs.near_path
+    elif session.remote_host is None:
+        near_path = session.local_work_dir / mount_specs.near_path
+    else:
+        # FIXME: must be absolute
+        near_path = session.remote_host_build_dir / mount_specs.near_path
+    return ["-v", f"{near_path}:{mount_specs.far_path}"]
+
+
 def parse_mutagen_id(output: str) -> str:
     """Parse the mutagen id from the output of mutagen sync create"""
     for line in output.replace("\r", "\n").split("\n"):
@@ -406,8 +442,8 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
             if status.status == "watching":
                 return
 
-    # mount
-    far_host = mount_specs.get_far_host_name(session)
+    # mount. Note that mutagen uses the host alias with control socket
+    far_host = mount_specs.get_far_host_name(session, suffix="_socket")
     ctx_mgr: AbstractContextManager
     if not in_background:
         ctx_mgr = prettyprint.LongAction(
@@ -426,6 +462,8 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
             f" {mount_specs.near_path}"
             f" {far_host}:{mount_specs.far_path}"
         )
+        if verbose:
+            print(f"+ {command}", file=sys.stderr)
         try:
             output = check_output(shlex.split(command), cwd=session.local_work_dir)
             mount_specs.mutagen_id = parse_mutagen_id(output.decode("utf-8"))
@@ -524,10 +562,10 @@ def parse_mutagen_status(output: str) -> List[MutagenStatus]:
     return [MutagenStatus(**x) for x in json.loads(output)]
 
 
-def get_mutagen_status(session: Session) -> Optional[List[MutagenStatus]]:
+def get_mutagen_status(session: Session, remote: bool = False) -> Optional[List[MutagenStatus]]:
     """Get the status of all mutagen syncs"""
     command = 'mutagen sync list --template "{{ json . }}"'
-    if session.remote_host is not None:
+    if remote:
         command = make_remote_command(command, session)
 
     if verbose:
@@ -573,3 +611,62 @@ def confirm_tool_installed(tool_name: str) -> bool:
         return check_call(["which", tool_name], stdout=DEVNULL, stderr=DEVNULL) == 0
     except CalledProcessError:
         return False
+
+
+def resolve_remote_host_build_dir(session: Session) -> Optional[Path]:
+    """Make the remote host build dir absolute, by using pwd on the remote host"""
+    if session.remote_host_build_dir is None:
+        return session.remote_host_build_dir
+    if session.remote_host_build_dir.is_absolute():
+        return session.remote_host_build_dir
+    command = make_remote_command(f"cd {session.remote_host_build_dir} && pwd", session=session)
+    if verbose:
+        print(f"+ {command}", file=sys.stderr)
+    if dry_run:
+        return None
+
+    try:
+        output = check_output(shlex.split(command), cwd=session.local_work_dir)
+    except CalledProcessError as e:
+        prettyprint.error(f"Error resolving remote host build dir: {e}")
+        return session.remote_host_build_dir
+    return Path(output.decode("utf-8").strip())
+
+
+def parse_netstat_output(output: str) -> List[int]:
+    """Parse the port numbers from the output of netstat --tcp --udp --listening --numeric"""
+    result = []
+    for line in output.split("\n"):
+        if not line.startswith("tcp") and not line.startswith("udp"):
+            continue
+        line = RE_MULTISPACE.sub(" ", line)
+        parts = line.split()
+        if len(parts) < 4:
+            continue
+        port = parts[3].split(":")[-1]
+        try:
+            result.append(int(port))
+        except ValueError:
+            pass
+    return result
+
+
+def find_free_port(session: Session, start_port: int = 2222, end_port: int = 65535) -> int:
+    """Find a free port"""
+    command = "netstat --tcp --udp --listening --numeric"
+    if session.remote_host is not None:
+        command = make_remote_command(command, session)
+    if verbose:
+        print(f"+ {command}", file=sys.stderr)
+    if dry_run:
+        return DEFAULT_HIGH_SSH_PORT
+    try:
+        output = check_output(shlex.split(command))
+        used_ports = set(parse_netstat_output(output.decode("utf-8")))
+        candidate_ports = set(range(start_port, end_port))
+        free_ports = list(candidate_ports - used_ports)
+        random.shuffle(free_ports)
+        return free_ports[0]
+    except CalledProcessError as e:
+        prettyprint.error(f"Error finding free port: {e}")
+        return DEFAULT_HIGH_SSH_PORT

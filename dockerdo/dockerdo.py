@@ -18,10 +18,13 @@ from dockerdo.shell import (
     confirm_tool_installed,
     detect_ssh_agent,
     ensure_mounts,
+    find_free_port,
+    get_all_docker_mount_args,
     get_container_work_dir,
     get_mutagen_status,
     get_user_config_dir,
     remove_mounts,
+    resolve_remote_host_build_dir,
     run_container_command,
     run_docker_save_pipe,
     run_local_command,
@@ -556,12 +559,14 @@ def run_or_start(
         # sleep to wait for the container to start
         if not dry_run:
             time.sleep(2)
-        ssh_master_process = run_ssh_master_process(session=session)
+        ssh_master_process = run_ssh_master_process(session=session, repeats=3)
         # sleep to wait for the ssh master process to start
-        if not dry_run:
-            time.sleep(2)
-        if task and os.path.exists(session.session_dir / "ssh-socket-container"):
-            task.set_status("OK")
+        for _ in range(3):
+            if not dry_run:
+                time.sleep(2)
+            if task and os.path.exists(session.session_dir / "ssh-socket-container"):
+                task.set_status("OK")
+                break
         if dry_run:
             task.set_status("OK")
 
@@ -585,7 +590,7 @@ def run_or_start(
                 import dockerdo.inotify
 
                 inotify_listener = dockerdo.inotify.InotifyListener(session)
-                inotify_listener.register_all_listeners()
+                inotify_listener.register_all_listeners(verbose=verbose)
                 # TODO: enable listening to new mounts created after run
                 try:
                     inotify_listener.listen(verbose=verbose)
@@ -651,9 +656,12 @@ def run(
         return 1
     if session.docker_run_args is not None and not no_default_args:
         docker_run_args = session.docker_run_args.split() + list(docker_run_args)
+    if session.remote_host is not None and not session.remote_host_build_dir.is_absolute():
+        abs_path = resolve_remote_host_build_dir(session)
+        session.remote_host_build_dir = abs_path if abs_path is not None else session.remote_host_build_dir
+    docker_run_args.extend(get_all_docker_mount_args(session))
     if ssh_port_on_remote_host is None:
-        # TODO: detect a free port
-        ssh_port_on_remote_host = 2222
+        ssh_port_on_remote_host = find_free_port(session=session)
     session.ssh_port_on_remote_host = ssh_port_on_remote_host
     return run_or_start(
         docker_command="run",
@@ -739,7 +747,7 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
 @click.argument("far_path", type=Path)
 @click.option("--near_host", type=click.Choice(["local", "remote"]), default="local")
 @click.option("--far_host", type=click.Choice(["remote", "container"]), default="container")
-@click.option("--sshfs", "use_sshfs", is_flag=True, help="Use sshfs instead of mutagen")
+@click.option("--type", "mount_type", type=click.Choice(["sshfs", "mutagen", "docker"]), default="mutagen")
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def mount(
@@ -747,7 +755,7 @@ def mount(
     far_path: Path,
     near_host: Literal["local", "remote"],
     far_host: Literal["remote", "container"],
-    use_sshfs: bool,
+    mount_type: Literal["sshfs", "mutagen", "docker"],
     verbose: bool,
     dry_run: bool,
 ) -> int:
@@ -756,21 +764,30 @@ def mount(
     session = load_session()
     if session is None:
         return 1
+    if mount_type == "docker" and session.container_state == "running":
+        prettyprint.error("Can not add docker mount to running container. Please stop it first.")
+        return 1
     mount_specs = MountSpecs(
         near_host=near_host,
         near_path=near_path,
         far_host=far_host,
         far_path=far_path,
-        mount_type="sshfs" if use_sshfs else "mutagen",
+        mount_type=mount_type,
     )
-    if dry_run:
-        prettyprint.action(
-            "local", "Would add mount", str(mount_specs)
-        )
-    else:
-        session.add_mount(mount_specs)
-        session.save()
-    ensure_mounts(session)
+    with prettyprint.LongAction(
+        host="local",
+        running_verb="Adding" if not dry_run else "Would add",
+        done_verb="Added" if not dry_run else "Would add",
+        running_message=f"mount: {mount_specs.descr_str()}",
+    ) as task:
+        if not dry_run:
+            session.add_mount(mount_specs)
+            session.save()
+        task.set_status("OK")
+
+    # if container is already running, mount it directly
+    if session.container_state == "running":
+        ensure_mounts(session)
     return 0
 
 
