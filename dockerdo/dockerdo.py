@@ -659,12 +659,13 @@ def run(
     if session.remote_host is not None and not session.remote_host_build_dir.is_absolute():
         abs_path = resolve_remote_host_build_dir(session)
         session.remote_host_build_dir = abs_path if abs_path is not None else session.remote_host_build_dir
-    docker_run_args_list.extend(get_all_docker_mount_args(session))
     if ssh_port_on_remote_host is None:
         ssh_port_on_remote_host = session.ssh_port_on_remote_host
     if ssh_port_on_remote_host is None:
         ssh_port_on_remote_host = find_free_port(session=session)
     session.ssh_port_on_remote_host = ssh_port_on_remote_host
+    session.format_mount_paths()
+    docker_run_args_list.extend(get_all_docker_mount_args(session))
     return run_or_start(
         docker_command="run",
         docker_args=docker_run_args_list,

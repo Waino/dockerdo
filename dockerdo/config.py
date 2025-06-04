@@ -3,10 +3,13 @@
 import yaml
 import json
 import time
+import re
+import os
 from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
 from pydantic import Field, ConfigDict, field_validator, model_validator
 from tempfile import mkdtemp
+from types import SimpleNamespace
 from typing import Optional, Literal, Dict, List, Any
 
 from dockerdo.utils import ephemeral_container_name
@@ -18,6 +21,7 @@ ARROWS = {
     "mutagen": "<=>",
     "docker": "->>",
 }
+ENV_VAR_REF = re.compile(r"\{host_env\.(\w+)\}")
 
 
 class BaseModel(PydanticBaseModel):
@@ -470,3 +474,31 @@ class Session(BaseModel):
             return
         self.mounts.append(mount_specs)
         self.save()
+
+    def _format_mount_path(self, path: Path) -> Path:
+        """
+        Format a path template with session and environment variables
+        Session variables are accessed as {session.var_name}
+        Host environment variables are accessed as {host_env.var_name}
+        Container environment variables are accessed as {container_env.var_name}
+        """
+
+        path_str = str(path)
+        # find all env var references "{host_env.var_name}" in the path template
+        env_var_refs = ENV_VAR_REF.findall(path_str)
+        env_vars = {var_name: os.environ.get(var_name, None) for var_name in env_var_refs}
+        unset_env_vars = [var_name for var_name, value in env_vars.items() if value is None]
+        if unset_env_vars:
+            raise Exception(f"Environment variables {unset_env_vars} used in path template are not set")
+        return Path(
+            path_str.format(
+                session=self,
+                host_env=SimpleNamespace(**env_vars),
+                container_env=SimpleNamespace(**self.env),
+            )
+        )
+
+    def format_mount_paths(self) -> None:
+        for mount_specs in self.mounts:
+            mount_specs.near_path = self._format_mount_path(mount_specs.near_path)
+            mount_specs.far_path = self._format_mount_path(mount_specs.far_path)
