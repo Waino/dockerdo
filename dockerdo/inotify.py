@@ -5,7 +5,7 @@ from pathlib import Path
 from dockerdo.config import Session, MountSpecs
 from dockerdo import prettyprint
 
-IGNORE_PATHS = {Path(x) for x in ("/proc", "/dev", "/sys")}
+IGNORE_PATHS = {Path(x) for x in ("/proc", "/dev", "/sys", "/var")}
 
 
 class InotifyListener:
@@ -40,18 +40,21 @@ class InotifyListener:
 
     def register_listeners(self, near_path: Path, far_path: Path) -> None:
         assert self.inotify is not None
+        # Add watch for the current directory
+        try:
+            wd = self.inotify.add_watch(near_path, mask=self.watch_flags)
+            self.watch_descriptors[wd] = far_path
+        except PermissionError:
+            pass
+        except OSError:
+            pass
+
+        # Recurse into subdirectories
         for path in near_path.glob("*"):
             path_inside_container = far_path / path.name
             if any(path_inside_container.is_relative_to(x) for x in IGNORE_PATHS):
                 continue
             if path.is_dir():
-                try:
-                    wd = self.inotify.add_watch(path, mask=self.watch_flags)
-                    self.watch_descriptors[wd] = path_inside_container
-                except PermissionError:
-                    pass
-                except OSError:
-                    pass
                 self.register_listeners(path, path_inside_container)
 
     def register_listeners_for_new_mounts(self) -> None:
@@ -78,6 +81,9 @@ class InotifyListener:
                         # Reload the session to update the container state
                         self.session = Session.load(self.session.session_dir)
                         self.register_listeners_for_new_mounts()
+                        continue
+                    if ".mutagen-temporary-cross-device-rename" in name:
+                        # Ignore mutagen temporary files
                         continue
                     path = self.watch_descriptors[wd] / name
                     if not self.session.record_modified_file(path):
