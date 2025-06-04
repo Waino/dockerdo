@@ -80,17 +80,18 @@ def run_local_command(command: str, cwd: Path = Path.cwd(), silent: bool = False
         return 0
 
 
-def make_remote_command(command: str, session: Session) -> str:
+def make_remote_command(command: str, session: Session, cwd: Optional[Path] = None) -> str:
     """
     Wrap a command in ssh to run on the remote host.
     """
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
     # ssh-socket-remote created when activating the session
+    cwd = session.remote_host_build_dir if cwd is None else cwd
     wrapped_command = (
         "ssh"
         f" -n -S {session.session_dir}/ssh-socket-remote"
         f" {session.remote_host}"
-        f' "cd {session.remote_host_build_dir} && {escaped_command}"'
+        f' "cd {cwd} && {escaped_command}"'
     )
     return wrapped_command
 
@@ -385,18 +386,24 @@ def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
     with ctx_mgr as task:
         if not dry_run:
             os.makedirs(mount_specs.near_path, exist_ok=True)
-        retval = run_local_command(
+        command = (
             f"sshfs "
             f" {far_host}:{mount_specs.far_path}"
-            f" {mount_specs.near_path}",
-            cwd=session.local_work_dir,
-            silent=in_background,
+            f" {mount_specs.near_path}"
         )
-        if retval != 0:
-            raise Exception(f"Failed to mount {mount_specs.descr_str()}")
-        if task and mount_specs.near_path.is_mount():
-            task.set_status("OK")
-        if dry_run:
+        if verbose:
+            print(f"+ {command}", file=sys.stderr)
+        if not dry_run:
+            retval = run_local_command(
+                command,
+                cwd=session.local_work_dir,
+                silent=in_background,
+            )
+            if retval != 0:
+                raise Exception(f"Failed to mount {mount_specs.descr_str()}")
+            if task and mount_specs.near_path.is_mount():
+                task.set_status("OK")
+        elif task:
             task.set_status("OK")
 
 
@@ -417,9 +424,13 @@ def get_docker_mount_args(mount_specs: MountSpecs, session: Session) -> List[str
     elif session.remote_host is None:
         near_path = session.local_work_dir / mount_specs.near_path
     else:
-        # FIXME: must be absolute
+        # session.remote_host_build_dir must be absolute
         near_path = session.remote_host_build_dir / mount_specs.near_path
-    return ["-v", f"{near_path}:{mount_specs.far_path}"]
+    if mount_specs.far_path.is_absolute():
+        far_path = mount_specs.far_path
+    else:
+        far_path = Path("/") / mount_specs.far_path
+    return ["-v", f"{near_path}:{far_path}"]
 
 
 def parse_mutagen_id(output: str) -> str:
@@ -464,13 +475,14 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenSt
         )
         if verbose:
             print(f"+ {command}", file=sys.stderr)
-        try:
-            output = check_output(shlex.split(command), cwd=session.local_work_dir)
-            mount_specs.mutagen_id = parse_mutagen_id(output.decode("utf-8"))
-            session.save()
-        except CalledProcessError as e:
-            prettyprint.error(f"Error running mutagen sync create: {e}")
-            raise Exception(f"Failed to mount {mount_specs.descr_str()}")
+        if not dry_run:
+            try:
+                output = check_output(shlex.split(command), cwd=session.local_work_dir)
+                mount_specs.mutagen_id = parse_mutagen_id(output.decode("utf-8"))
+                session.save()
+            except CalledProcessError as e:
+                prettyprint.error(f"Error running mutagen sync create: {e}")
+                raise Exception(f"Failed to mount {mount_specs.descr_str()}")
         if task:
             task.set_status("OK")
         if dry_run:
@@ -619,7 +631,7 @@ def resolve_remote_host_build_dir(session: Session) -> Optional[Path]:
         return session.remote_host_build_dir
     if session.remote_host_build_dir.is_absolute():
         return session.remote_host_build_dir
-    command = make_remote_command(f"cd {session.remote_host_build_dir} && pwd", session=session)
+    command = make_remote_command("pwd", session=session)
     if verbose:
         print(f"+ {command}", file=sys.stderr)
     if dry_run:

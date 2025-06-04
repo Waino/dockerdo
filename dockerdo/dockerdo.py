@@ -9,7 +9,7 @@ import time
 from contextlib import nullcontext, AbstractContextManager
 from pathlib import Path
 from subprocess import Popen
-from typing import Optional, List, Literal
+from typing import Optional, List, Literal, Tuple
 
 from dockerdo import prettyprint, __version__
 from dockerdo.config import Preset, Session, MountSpecs
@@ -635,7 +635,7 @@ def run_or_start(
 )
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def run(
-    docker_run_args: List[str],
+    docker_run_args: Tuple[str],
     no_default_args: bool,
     ssh_port_on_remote_host: Optional[int],
     record: bool,
@@ -654,18 +654,19 @@ def run(
     session = load_session()
     if session is None:
         return 1
+    docker_run_args_list = list(docker_run_args)
     if session.docker_run_args is not None and not no_default_args:
-        docker_run_args = session.docker_run_args.split() + list(docker_run_args)
+        docker_run_args_list = session.docker_run_args.split() + list(docker_run_args_list)
     if session.remote_host is not None and not session.remote_host_build_dir.is_absolute():
         abs_path = resolve_remote_host_build_dir(session)
         session.remote_host_build_dir = abs_path if abs_path is not None else session.remote_host_build_dir
-    docker_run_args.extend(get_all_docker_mount_args(session))
+    docker_run_args_list.extend(get_all_docker_mount_args(session))
     if ssh_port_on_remote_host is None:
         ssh_port_on_remote_host = find_free_port(session=session)
     session.ssh_port_on_remote_host = ssh_port_on_remote_host
     return run_or_start(
         docker_command="run",
-        docker_args=docker_run_args,
+        docker_args=docker_run_args_list,
         record=record,
         remote_delay=remote_delay,
         verbose=verbose,
@@ -745,8 +746,8 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
 @cli.command()
 @click.argument("near_path", type=Path)
 @click.argument("far_path", type=Path)
-@click.option("--near_host", type=click.Choice(["local", "remote"]), default="local")
-@click.option("--far_host", type=click.Choice(["remote", "container"]), default="container")
+@click.option("--near-host", type=click.Choice(["local", "remote"]), default="local")
+@click.option("--far-host", type=click.Choice(["remote", "container"]), default="container")
 @click.option("--type", "mount_type", type=click.Choice(["sshfs", "mutagen", "docker"]), default="mutagen")
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
@@ -930,7 +931,7 @@ def status(verbose: bool, dry_run: bool) -> int:
     prettyprint.container_status(session.container_state)
     prettyprint.info("Session status:")
     rich.print(
-        session.model_dump_yaml(exclude={"container_state", "host_key_lines"}),
+        session.model_dump_yaml(exclude={"container_state", "host_key_lines", "mounts"}),
         file=sys.stderr,
     )
     session.save()

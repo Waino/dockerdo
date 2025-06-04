@@ -159,6 +159,7 @@ class Session(BaseModel):
     record_inotify: bool
     remote_delay: float
     remote_host: Optional[str]
+    # remote_host_build_dir is made absolute when the container is run
     remote_host_build_dir: Path
     ssh_key_path: Path
 
