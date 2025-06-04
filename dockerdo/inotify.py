@@ -28,8 +28,8 @@ class InotifyListener:
 
     def register_listeners(self, near_path: Path, far_path: Path) -> None:
         assert self.inotify is not None
-        for path in near_path.rglob("*"):
-            path_inside_container = far_path / path.relative_to(near_path)
+        for path in near_path.glob("*"):
+            path_inside_container = far_path / path.name
             if any(path_inside_container.is_relative_to(x) for x in IGNORE_PATHS):
                 continue
             if path.is_dir():
@@ -40,6 +40,7 @@ class InotifyListener:
                     pass
                 except OSError:
                     pass
+                self.register_listeners(path, path_inside_container)
 
     def listen(self, verbose: bool = False) -> None:
         if self.inotify is None:
