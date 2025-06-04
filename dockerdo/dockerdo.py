@@ -589,12 +589,11 @@ def run_or_start(
             if not dry_run:
                 import dockerdo.inotify
 
-                inotify_listener = dockerdo.inotify.InotifyListener(session)
-                inotify_listener.register_all_listeners(verbose=verbose)
-                # TODO: enable listening to new mounts created after run
+                inotify_listener = dockerdo.inotify.InotifyListener(session, verbose=verbose)
+                inotify_listener.register_all_listeners()
                 try:
-                    inotify_listener.listen(verbose=verbose)
-                except OSError as e:
+                    inotify_listener.listen()
+                except Exception as e:
                     prettyprint.error(f"No longer listening to filesystem events due to error: {e}")
             if task:
                 task.set_status("OK")
@@ -661,6 +660,8 @@ def run(
         abs_path = resolve_remote_host_build_dir(session)
         session.remote_host_build_dir = abs_path if abs_path is not None else session.remote_host_build_dir
     docker_run_args_list.extend(get_all_docker_mount_args(session))
+    if ssh_port_on_remote_host is None:
+        ssh_port_on_remote_host = session.ssh_port_on_remote_host
     if ssh_port_on_remote_host is None:
         ssh_port_on_remote_host = find_free_port(session=session)
     session.ssh_port_on_remote_host = ssh_port_on_remote_host

@@ -2,6 +2,7 @@
 
 import yaml
 import json
+import time
 from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
 from pydantic import Field, ConfigDict, field_validator, model_validator
@@ -79,6 +80,18 @@ class MountSpecs(BaseModel):
             and self.far_host == other.far_host
             and self.far_path == other.far_path
             and self.mount_type == other.mount_type
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.near_host,
+                self.near_path,
+                self.far_host,
+                self.far_path,
+                self.mount_type,
+                self.mutagen_id,
+            )
         )
 
 
@@ -342,8 +355,19 @@ class Session(BaseModel):
     def load(cls, session_dir: Path) -> "Session":
         """Load the session from a file in the session directory"""
         session_file = session_dir / "session.yaml"
-        with open(session_file, "r") as f:
-            return cls.from_yaml(f.read())
+        retries = 3
+        while retries > 0:
+            with open(session_file, "r") as f:
+                contents = f.read()
+                if len(contents) == 0:
+                    if retries == 0:
+                        raise Exception(f"Empty session file {session_file}")
+                    else:
+                        time.sleep(0.2)
+                        retries -= 1
+                        continue
+                return cls.from_yaml(contents)
+        raise Exception(f"Failed to load session from {session_file}")
 
     @property
     def sshfs_remote_mount_point(self) -> Optional[Path]:
