@@ -384,6 +384,7 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
             retval = run_remote_command(
                 build_cmd,
                 session,
+                use_tty=True,
             )
             if retval == 0:
                 task.set_status("OK")

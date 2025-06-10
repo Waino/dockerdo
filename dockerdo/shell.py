@@ -80,15 +80,21 @@ def run_local_command(command: str, cwd: Path = Path.cwd(), silent: bool = False
         return 0
 
 
-def make_remote_command(command: str, session: Session, cwd: Optional[Path] = None) -> str:
+def make_remote_command(
+    command: str,
+    session: Session,
+    cwd: Optional[Path] = None,
+    use_tty: bool = False,
+) -> str:
     """
     Wrap a command in ssh to run on the remote host.
     """
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
     # ssh-socket-remote created when activating the session
     cwd = session.remote_host_build_dir if cwd is None else cwd
+    tty_flag = "-t" if use_tty else ""
     wrapped_command = (
-        "ssh"
+        f"ssh {tty_flag}"
         f" -n -S {session.session_dir}/ssh-socket-remote"
         f" {session.remote_host}"
         f' "cd {cwd} && {escaped_command}"'
@@ -96,12 +102,12 @@ def make_remote_command(command: str, session: Session, cwd: Optional[Path] = No
     return wrapped_command
 
 
-def run_remote_command(command: str, session: Session) -> int:
+def run_remote_command(command: str, session: Session, use_tty: bool = False) -> int:
     """
     Run a command on the remote host, piping through stdout, and stderr.
     Stdin is not connected.
     """
-    wrapped_command = make_remote_command(command, session)
+    wrapped_command = make_remote_command(command, session, use_tty=use_tty)
     cwd = Path(os.getcwd())
     return run_local_command(wrapped_command, cwd=cwd)
 
