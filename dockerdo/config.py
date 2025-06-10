@@ -99,6 +99,40 @@ class MountSpecs(BaseModel):
         )
 
 
+class PortForwardSpecs(BaseModel):
+    source_port: int
+    destination_port: int
+    # mutagen_id is None if not yet created
+    mutagen_id: Optional[str] = None
+
+    def descr_str(self) -> str:
+        arrow = '--o'
+        return f"localhost:{self.source_port} {arrow} container:{self.destination_port}"
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, PortForwardSpecs):
+            return False
+        if (
+            self.mutagen_id is not None
+            and other.mutagen_id is not None
+            and self.mutagen_id != other.mutagen_id
+        ):
+            return False
+        return (
+            self.source_port == other.source_port
+            and self.destination_port == other.destination_port
+        )
+
+    def __hash__(self) -> int:
+        return hash(
+            (
+                self.source_port,
+                self.destination_port,
+                self.mutagen_id,
+            )
+        )
+
+
 class Preset(BaseModel):
     """User configuration presets for dockerdo"""
     description: str = ""
@@ -116,6 +150,7 @@ class Preset(BaseModel):
     remote_host_build_dir: Path = Path(".")
     ssh_key_path: Path = Path("~/.ssh/id_rsa.pub").expanduser()
     mounts: List[MountSpecs] = Field(default_factory=list)
+    port_forwards: List[PortForwardSpecs] = Field(default_factory=list)
 
     @classmethod
     def load_presets(cls, yaml_str: str) -> Dict[str, "Preset"]:
@@ -193,6 +228,7 @@ class Session(BaseModel):
     container_state: Literal["nothing", "running", "stopped"] = "nothing"
     host_key_lines: List[str] = []
     mounts: List[MountSpecs] = Field(default_factory=list)
+    port_forwards: List[PortForwardSpecs] = Field(default_factory=list)
 
     @classmethod
     def from_opts(
@@ -294,6 +330,7 @@ class Session(BaseModel):
             session_dir=session_dir,
             ssh_key_path=ssh_key_path,
             mounts=preset.mounts,
+            port_forwards=preset.port_forwards,
         )
         return session
 
@@ -480,6 +517,13 @@ class Session(BaseModel):
         if any(mount_specs == m for m in self.mounts):
             return
         self.mounts.append(mount_specs)
+        self.save()
+
+    def add_port_forward(self, port_forward_specs: PortForwardSpecs) -> None:
+        # Prevent duplicate port forwards
+        if any(port_forward_specs == p for p in self.port_forwards):
+            return
+        self.port_forwards.append(port_forward_specs)
         self.save()
 
     def _format_mount_path(self, path: Path) -> Path:

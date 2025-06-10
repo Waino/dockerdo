@@ -13,7 +13,7 @@ from subprocess import Popen, PIPE, DEVNULL, check_output, check_call, CalledPro
 from typing import Optional, TextIO, Tuple, Literal, List, Union
 
 from dockerdo import prettyprint
-from dockerdo.config import Session, MountSpecs, BaseModel
+from dockerdo.config import Session, MountSpecs, BaseModel, PortForwardSpecs
 from dockerdo.utils import retry
 
 RE_MUTAGEN_ID = re.compile(r"Created session (\S+)")
@@ -326,7 +326,7 @@ class MutagenEndpointSsh(BaseModel):
     symbolicLinks: int = 0
 
 
-class MutagenStatus(BaseModel):
+class MutagenMountStatus(BaseModel):
     """Status of a mutagen sync. Only the fields we care about."""
 
     identifier: str
@@ -342,7 +342,7 @@ def ensure_mounts(session: Session) -> None:
     Idempotent: if a mount is already active, does nothing.
     Note that this function causes prettyprint.LongAction logging.
     """
-    mutagen_status: Optional[List[MutagenStatus]]
+    mutagen_status: Optional[List[MutagenMountStatus]]
     if any(mount_specs.mount_type == "mutagen" for mount_specs in session.mounts):
         mutagen_status = get_mutagen_status(session)
         if mutagen_status is None:
@@ -446,7 +446,7 @@ def parse_mutagen_id(output: str) -> str:
     raise ValueError(f"Failed to parse mutagen id from '{output!r}'")
 
 
-def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenStatus], session: Session) -> None:
+def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenMountStatus], session: Session) -> None:
     """Ensure that the mutagen sync is active"""
     assert mount_specs.mount_type == "mutagen"
 
@@ -572,12 +572,12 @@ def remove_mutagen_mount(mount_specs: MountSpecs) -> None:
         task.set_status("OK")
 
 
-def parse_mutagen_status(output: str) -> List[MutagenStatus]:
+def parse_mutagen_status(output: str) -> List[MutagenMountStatus]:
     """Parse the output of mutagen sync list"""
-    return [MutagenStatus(**x) for x in json.loads(output)]
+    return [MutagenMountStatus(**x) for x in json.loads(output)]
 
 
-def get_mutagen_status(session: Session, remote: bool = False) -> Optional[List[MutagenStatus]]:
+def get_mutagen_status(session: Session, remote: bool = False) -> Optional[List[MutagenMountStatus]]:
     """Get the status of all mutagen syncs"""
     command = 'mutagen sync list --template "{{ json . }}"'
     if remote:
@@ -602,6 +602,149 @@ def get_mutagen_status(session: Session, remote: bool = False) -> Optional[List[
     except ValidationError as e:
         prettyprint.error(f"Error validating mutagen status '{output!r}': {e}")
         return None
+
+
+class MutagenForwardStatus(BaseModel):
+    """Status of a mutagen forward. Only the fields we care about."""
+    identifier: str
+    source: str
+    destination: str
+    status: str
+
+
+def parse_mutagen_forward_status(output: str) -> List[MutagenForwardStatus]:
+    """Parse the output of mutagen forward list"""
+    return [MutagenForwardStatus(**x) for x in json.loads(output)]
+
+
+def get_mutagen_forward_status(session: Session) -> Optional[List[MutagenForwardStatus]]:
+    """Get the status of all mutagen forwards"""
+    command = "mutagen forward list --template json"
+    if verbose:
+        print(f"+ {command}", file=sys.stderr)
+    if dry_run:
+        return []
+    try:
+        output = check_output(shlex.split(command))
+        return parse_mutagen_forward_status(output.decode("utf-8"))
+    except CalledProcessError as e:
+        prettyprint.error(f"Error running mutagen forward list: {e}")
+        return None
+
+
+def parse_mutagen_forward_id(output: str) -> str:
+    """Parse the mutagen id from the output of mutagen forward create"""
+    for line in output.replace("\r", "\n").split("\n"):
+        line = line.strip()
+        m = RE_MUTAGEN_ID.match(line)
+        if m:
+            return m.group(1)
+    raise ValueError(f"Failed to parse mutagen id from '{output!r}'")
+
+
+def ensure_port_forwards(session: Session, dry_run: bool = False) -> None:
+    """
+    Ensure that all port forwards are active.
+    Idempotent: if a forward is already active, does nothing.
+    """
+    mutagen_forward_status: Optional[List[MutagenForwardStatus]]
+    mutagen_forward_status = get_mutagen_forward_status(session)
+    if mutagen_forward_status is None:
+        if not dry_run:
+            prettyprint.error("Failed to get mutagen forward status")
+            return
+        else:
+            # Dummy value of no active forwards will show all forward commands in dryrun
+            mutagen_forward_status = []
+
+    for forward_specs in session.port_forwards:
+        ensure_mutagen_forward(forward_specs, mutagen_forward_status, session)
+
+
+def ensure_mutagen_forward(
+    forward_specs: PortForwardSpecs,
+    mutagen_forward_status: List[MutagenForwardStatus],
+    session: Session
+) -> None:
+    """Ensure that the mutagen forward is active"""
+    # check if already active
+    for status in mutagen_forward_status:
+        if status.identifier == forward_specs.mutagen_id:
+            if status.status == "forwarding":
+                return
+
+    # create forward
+    destination_host = session.container_host_alias + "_socket"
+    ctx_mgr: AbstractContextManager
+    if not in_background:
+        ctx_mgr = prettyprint.LongAction(
+            host="local",
+            running_verb="Creating" if not dry_run else "Would create",
+            done_verb="Created" if not dry_run else "Would create",
+            running_message=forward_specs.descr_str(),
+        )
+    else:
+        ctx_mgr = nullcontext()
+    with ctx_mgr as task:
+        command = (
+            f"mutagen forward create"
+            f" tcp:localhost:{forward_specs.source_port}"
+            f" tcp:{destination_host}:{forward_specs.destination_port}"
+        )
+        if verbose:
+            print(f"+ {command}", file=sys.stderr)
+        if not dry_run:
+            try:
+                output = check_output(shlex.split(command), cwd=session.local_work_dir)
+                forward_specs.mutagen_id = parse_mutagen_forward_id(output.decode("utf-8"))
+                session.save()
+            except CalledProcessError as e:
+                prettyprint.error(f"Error running mutagen forward create: {e}")
+                raise Exception(f"Failed to create forward {forward_specs.descr_str()}")
+        if task:
+            task.set_status("OK")
+        if dry_run:
+            task.set_status("OK")
+
+
+def stop_mutagen_forward(forward_specs: PortForwardSpecs) -> None:
+    """Stop the mutagen forward"""
+    if forward_specs.mutagen_id is None:
+        return
+    with prettyprint.LongAction(
+        host="local",
+        running_verb="Stopping",
+        done_verb="Stopped" if not dry_run else "Would stop",
+        running_message="mutagen forward",
+    ) as task:
+        run_local_command(f"mutagen forward pause {forward_specs.mutagen_id}")
+        task.set_status("OK")
+
+
+def remove_mutagen_forward(forward_specs: PortForwardSpecs) -> None:
+    """Permanently remove the mutagen forward"""
+    if forward_specs.mutagen_id is None:
+        return
+    with prettyprint.LongAction(
+        host="local",
+        running_verb="Stopping",
+        done_verb="Stopped" if not dry_run else "Would stop",
+        running_message="mutagen forward",
+    ) as task:
+        run_local_command(f"mutagen forward terminate {forward_specs.mutagen_id}")
+        task.set_status("OK")
+
+
+def stop_forwards(session: Session) -> None:
+    """Stop all port forwards"""
+    for forward_specs in session.port_forwards:
+        stop_mutagen_forward(forward_specs)
+
+
+def remove_forwards(session: Session) -> None:
+    """Remove all port forwards"""
+    for forward_specs in session.port_forwards:
+        remove_mutagen_forward(forward_specs)
 
 
 def write_container_env_file(session: Session) -> None:

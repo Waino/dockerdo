@@ -12,17 +12,20 @@ from subprocess import Popen
 from typing import Optional, List, Literal, Tuple
 
 from dockerdo import prettyprint, __version__
-from dockerdo.config import Preset, Session, MountSpecs
+from dockerdo.config import Preset, Session, MountSpecs, PortForwardSpecs
 from dockerdo.docker import DISTROS, format_dockerfile
 from dockerdo.shell import (
     confirm_tool_installed,
     detect_ssh_agent,
     ensure_mounts,
+    ensure_port_forwards,
     find_free_port,
     get_all_docker_mount_args,
     get_container_work_dir,
+    get_mutagen_forward_status,
     get_mutagen_status,
     get_user_config_dir,
+    remove_forwards,
     remove_mounts,
     resolve_remote_host_build_dir,
     run_container_command,
@@ -31,6 +34,7 @@ from dockerdo.shell import (
     run_remote_command,
     run_ssh_master_process,
     set_execution_mode,
+    stop_forwards,
     stop_mounts,
     verify_container_state,
     write_container_env_file,
@@ -580,6 +584,7 @@ def run_or_start(
         if dry_run:
             task.set_status("OK")
 
+    # mounts
     def _attempt_mounts():
         ensure_mounts(session)
 
@@ -587,6 +592,15 @@ def run_or_start(
         prettyprint.error(f"Error mounting: {e}")
 
     retry(_attempt_mounts, _on_error_mounts, retries=session.startup_retries)
+
+    # port forwards
+    def _attempt_forwards():
+        ensure_port_forwards(session)
+
+    def _on_error_forwards(e: Exception):
+        prettyprint.error(f"Error forwarding ports: {e}")
+
+    retry(_attempt_forwards, _on_error_forwards, retries=session.startup_retries)
 
     session.record_inotify = session.record_inotify or record
     if not dry_run:
@@ -770,6 +784,7 @@ def _ensure_callback(ctx, param, value):
         ctx.exit()
     if session.container_state == "running":
         ensure_mounts(session)
+        ensure_port_forwards(session)
     else:
         prettyprint.warning("Container is not running. Not mounting anything.")
     ctx.exit()
@@ -829,6 +844,54 @@ def mount(
     # if container is already running, mount it directly
     if session.container_state == "running":
         ensure_mounts(session)
+    return 0
+
+
+@cli.command()
+@click.argument("source_port", type=int)
+@click.argument("destination_port", type=int)
+@click.option(
+    "--ensure",
+    is_flag=True,
+    callback=_ensure_callback,
+    expose_value=False,
+    is_eager=True,
+    help="Instead of adding a new forward, ensure that all the current forwards are active"
+)
+@click.option("-v", "--verbose", is_flag=True, help="Print commands")
+@click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
+def forward(
+    source_port: int,
+    destination_port: int,
+    destination_host: Literal["remote", "container"],
+    forward_type: Literal["mutagen"],
+    verbose: bool,
+    dry_run: bool,
+) -> int:
+    """Forward a port using mutagen"""
+    set_execution_mode(verbose, dry_run)
+    session = load_session()
+    if session is None:
+        return 1
+
+    forward_specs = PortForwardSpecs(
+        source_port=source_port,
+        destination_port=destination_port,
+    )
+    with prettyprint.LongAction(
+        host="local",
+        running_verb="Adding" if not dry_run else "Would add",
+        done_verb="Added" if not dry_run else "Would add",
+        running_message=f"forward: {forward_specs.descr_str()}",
+    ) as task:
+        if not dry_run:
+            session.add_port_forward(forward_specs)
+            session.save()
+        task.set_status("OK")
+
+    # if container is already running, create the forward directly
+    if session.container_state == "running":
+        ensure_port_forwards(session)
     return 0
 
 
@@ -952,6 +1015,21 @@ def status(verbose: bool, dry_run: bool) -> int:
         active_str = "Active" if active else "Inactive"
         prettyprint.info(f"{active_str:8s}:  {mount_specs.descr_str()}")
 
+    # Check status of port forwards
+    mutagen_forward_status = get_mutagen_forward_status(session)
+    if mutagen_forward_status is None and not dry_run:
+        prettyprint.error("Failed to get mutagen forward status")
+    for forward_specs in session.port_forwards:
+        active = False
+        if mutagen_forward_status is None:
+            active = False
+        else:
+            for forward_status in mutagen_forward_status:
+                if forward_status.identifier == forward_specs.mutagen_id:
+                    active = forward_status.status == "forwarding"
+        active_str = "Active" if active else "Inactive"
+        prettyprint.info(f"{active_str:8s}:  {forward_specs.descr_str()}")
+
     # Check status of SSH sockets
     if session.remote_host is not None:
         if os.path.exists(session.session_dir / "ssh-socket-remote"):
@@ -989,6 +1067,7 @@ def stop(verbose: bool, dry_run: bool) -> int:
         return 1
 
     stop_mounts(session)
+    stop_forwards(session)
 
     command = f"docker stop {session.container_name}"
     with prettyprint.LongAction(
@@ -1065,6 +1144,7 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
                 task.set_status("OK")
 
     remove_mounts(session)
+    remove_forwards(session)
 
     if session.container_state != "nothing":
         force_flag = "-f" if force else ""
