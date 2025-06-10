@@ -42,7 +42,7 @@ from dockerdo.ssh import (
     remove_session_from_ssh_config,
     SSH_INCLUDE_BLOCK,
 )
-from dockerdo.utils import make_image_tag
+from dockerdo.utils import make_image_tag, retry
 
 
 def load_preset(preset: str = '_default') -> Preset:
@@ -71,6 +71,7 @@ def load_session() -> Optional[Session]:
 
 # ## for subcommands
 @click.group(context_settings={"show_default": True})
+@click.version_option(prog_name="dockerdo", package_name="dockerdo", version=__version__)
 def cli() -> None:
     pass
 
@@ -203,7 +204,7 @@ def install(no_bashrc: bool, no_ssh_config: bool, verbose: bool, dry_run: bool) 
 @click.option(
     "--startup-retries",
     type=int,
-    help="Number of times to retry starting the ssh master process",
+    help="Number of times to retry starting the ssh master process and mounts",
     default=None,
 )
 @click.option(
@@ -578,7 +579,13 @@ def run_or_start(
         if dry_run:
             task.set_status("OK")
 
-    ensure_mounts(session)
+    def _attempt_mounts():
+        ensure_mounts(session)
+
+    def _on_error_mounts(e: Exception):
+        prettyprint.error(f"Error mounting: {e}")
+
+    retry(_attempt_mounts, _on_error_mounts, retries=session.startup_retries)
 
     session.record_inotify = session.record_inotify or record
     if not dry_run:
@@ -753,12 +760,34 @@ def export(key_value: str, verbose: bool, dry_run: bool) -> int:
     return 0
 
 
+def _ensure_callback(ctx, param, value):
+    if not value or ctx.resilient_parsing:
+        return
+    session = load_session()
+    if session is None:
+        prettyprint.error("No active session")
+        ctx.exit()
+    if session.container_state == "running":
+        ensure_mounts(session)
+    else:
+        prettyprint.warning("Container is not running. Not mounting anything.")
+    ctx.exit()
+
+
 @cli.command()
 @click.argument("near_path", type=Path)
 @click.argument("far_path", type=Path)
 @click.option("--near-host", type=click.Choice(["local", "remote"]), default="local")
 @click.option("--far-host", type=click.Choice(["remote", "container"]), default="container")
 @click.option("--type", "mount_type", type=click.Choice(["sshfs", "mutagen", "docker"]), default="mutagen")
+@click.option(
+    "--ensure",
+    is_flag=True,
+    callback=_ensure_callback,
+    expose_value=False,
+    is_eager=True,
+    help="Instead of adding a new mount, ensure that all the current mounts are active"
+)
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def mount(
@@ -775,8 +804,8 @@ def mount(
     session = load_session()
     if session is None:
         return 1
-    if mount_type == "docker" and session.container_state == "running":
-        prettyprint.error("Can not add docker mount to running container. Please stop it first.")
+    if mount_type == "docker" and session.container_state != "nothing":
+        prettyprint.error("Can not add docker mount to existing container. Please remove it first.")
         return 1
     mount_specs = MountSpecs(
         near_host=near_host,
@@ -857,7 +886,6 @@ def pwd(verbose: bool, dry_run: bool) -> int:
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def status(verbose: bool, dry_run: bool) -> int:
     """Print the status of a session"""
-    prettyprint.info(f"Dockerdo version: {__version__}")
     set_execution_mode(verbose, dry_run)
     user_config_path = get_user_config_dir() / "dockerdo.yaml"
     if not user_config_path.exists():
