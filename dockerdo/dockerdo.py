@@ -201,6 +201,12 @@ def install(no_bashrc: bool, no_ssh_config: bool, verbose: bool, dry_run: bool) 
     "--ssh-key", 'ssh_key_path', type=Path, help="Path to ssh public key", default=None,
 )
 @click.option(
+    "--startup-retries",
+    type=int,
+    help="Number of times to retry starting the ssh master process",
+    default=None,
+)
+@click.option(
     "--remote-delay",
     type=float,
     default=None,
@@ -219,6 +225,7 @@ def init(
     local: bool,
     record: bool,
     registry: Optional[str],
+    startup_retries: Optional[int],
     remote_delay: Optional[float],
     remote_host: Optional[str],
     session_name: Optional[str],
@@ -247,6 +254,7 @@ def init(
         local_work_dir=cwd,
         preset=preset,
         record_inotify=record,
+        startup_retries=startup_retries,
         remote_delay=remote_delay,
         remote_host=remote_host,
         remote_host_build_dir=build_dir,
@@ -559,9 +567,9 @@ def run_or_start(
         # sleep to wait for the container to start
         if not dry_run:
             time.sleep(2)
-        ssh_master_process = run_ssh_master_process(session=session, repeats=3)
+        ssh_master_process = run_ssh_master_process(session=session, retries=session.startup_retries)
         # sleep to wait for the ssh master process to start
-        for _ in range(3):
+        for _ in range(session.startup_retries):
             if not dry_run:
                 time.sleep(2)
             if task and os.path.exists(session.session_dir / "ssh-socket-container"):

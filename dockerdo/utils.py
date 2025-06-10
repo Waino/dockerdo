@@ -4,7 +4,9 @@ import random
 import string
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Callable, TypeVar
+
+T = TypeVar("T")
 
 
 def ephemeral_container_name() -> str:
@@ -44,3 +46,22 @@ def make_image_tag(
 def empty_or_nonexistent(path: Path) -> bool:
     """Check if a path is empty or nonexistent"""
     return not path.exists() or not any(path.iterdir())
+
+
+def retry(
+    func: Callable[[], T],
+    on_error: Callable[[Exception], None] = lambda e: None,
+    retries: int = 10,
+    delay: float = 2.0
+) -> Optional[T]:
+    """Retry a function call a number of times"""
+    for i in range(retries):
+        try:
+            return func()
+        except Exception as e:
+            if i == retries - 1:
+                raise
+            else:
+                on_error(e)
+        time.sleep(delay)
+    return None

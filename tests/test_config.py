@@ -20,7 +20,8 @@ def test_session_from_opts_defaults():
             local=True,
             local_work_dir=Path("/obscure/workdir"),
             record_inotify=False,
-            remote_delay=0.0,
+            startup_retries=None,
+            remote_delay=None,
             remote_host=None,
             remote_host_build_dir=Path("."),
             session_name=None,
@@ -39,6 +40,8 @@ def test_session_from_opts_defaults():
     assert session.local_work_dir == Path("/obscure/workdir")
     assert session.name == "1234a67890"
     assert session.record_inotify is False
+    assert session.startup_retries == 10
+    # remote delay is always zero for local
     assert session.remote_delay == 0.0
     assert session.remote_host is None
     assert session.remote_host_build_dir == Path(".")
@@ -89,6 +92,7 @@ def test_session_from_opts_override_all():
             local=False,
             local_work_dir=Path("/another/workdir"),
             record_inotify=False,
+            startup_retries=5,
             remote_delay=1.0,
             remote_host='reno',
             remote_host_build_dir=Path("/tmp/build"),
@@ -107,6 +111,7 @@ def test_session_from_opts_override_all():
     assert session.local_work_dir == Path("/another/workdir")
     assert session.name == "my_session"
     assert session.record_inotify is True   # always_record_inotify overrides record_inotify
+    assert session.startup_retries == 5
     assert session.remote_delay == 1.0
     assert session.remote_host == "reno"
     assert session.remote_host_build_dir == Path("/tmp/build")
@@ -152,6 +157,8 @@ def test_session_from_opts_override_some():
         base_image="alpine:latest",
         docker_registry="docker.io",
         docker_run_args="--rm",
+        image_name_template="my-custom-template",
+        startup_retries=5,
         remote_delay=0.5,
         record_inotify=True,
         mounts=[
@@ -178,6 +185,7 @@ def test_session_from_opts_override_some():
             local=False,
             local_work_dir=Path("/another/workdir"),
             record_inotify=False,
+            startup_retries=None,
             remote_delay=None,
             remote_host=None,
             remote_host_build_dir=Path("/tmp/build"),
@@ -196,6 +204,7 @@ def test_session_from_opts_override_some():
     assert session.local_work_dir == Path("/another/workdir")
     assert session.name == "my_session"
     assert session.record_inotify is True   # preset record_inotify
+    assert session.startup_retries == 5
     assert session.remote_delay == 0.5
     assert session.remote_host == "reykjavik"
     assert session.remote_host_build_dir == Path("/tmp/build")
@@ -255,6 +264,7 @@ def test_session_env_management():
             local=False,
             local_work_dir=Path("/another/workdir"),
             record_inotify=False,
+            startup_retries=None,
             remote_delay=0.0,
             remote_host=None,
             remote_host_build_dir=Path("/tmp/build"),
@@ -303,6 +313,7 @@ def test_session_from_opts_persistent_already_exists():
                 local=False,
                 local_work_dir=Path("/another/workdir"),
                 record_inotify=False,
+                startup_retries=5,
                 remote_delay=0.0,
                 remote_host='reno',
                 remote_host_build_dir=Path("/tmp/build"),
@@ -337,6 +348,7 @@ def test_session_dry_run():
             local=False,
             local_work_dir=Path("/another/workdir"),
             record_inotify=False,
+            startup_retries=None,
             remote_delay=0.0,
             remote_host=None,
             remote_host_build_dir=Path("/tmp/build"),

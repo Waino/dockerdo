@@ -110,6 +110,7 @@ class Preset(BaseModel):
     base_image: str = "ubuntu:latest"
     image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}"
     record_inotify: bool = False
+    startup_retries: int = 10
     remote_delay: float = 0.3
     remote_host: Optional[str] = None
     remote_host_build_dir: Path = Path(".")
@@ -174,6 +175,7 @@ class Session(BaseModel):
     docker_run_args: Optional[str]
     image_name_template: str
     record_inotify: bool
+    startup_retries: int
     remote_delay: float
     remote_host: Optional[str]
     # remote_host_build_dir is made absolute when the container is run
@@ -205,6 +207,7 @@ class Session(BaseModel):
         local_work_dir: Path,
         preset: Preset,
         record_inotify: bool,
+        startup_retries: Optional[int],
         remote_delay: Optional[float],
         remote_host: Optional[str],
         remote_host_build_dir: Optional[Path],
@@ -249,6 +252,9 @@ class Session(BaseModel):
         remote_host_build_dir = (
             remote_host_build_dir if remote_host_build_dir is not None else preset.remote_host_build_dir
         )
+        startup_retries = (
+            startup_retries if startup_retries is not None else preset.startup_retries
+        )
         if local:
             remote_host = None
             remote_delay = 0.0
@@ -281,6 +287,7 @@ class Session(BaseModel):
             local_work_dir=local_work_dir,
             name=session_name,
             record_inotify=record_inotify,
+            startup_retries=startup_retries,
             remote_delay=remote_delay,
             remote_host=remote_host,
             remote_host_build_dir=remote_host_build_dir,

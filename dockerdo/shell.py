@@ -6,7 +6,6 @@ import random
 import re
 import shlex
 import sys
-import time
 from contextlib import nullcontext, AbstractContextManager
 from pathlib import Path
 from pydantic import ValidationError, Field
@@ -15,6 +14,7 @@ from typing import Optional, TextIO, Tuple, Literal, List, Union
 
 from dockerdo import prettyprint
 from dockerdo.config import Session, MountSpecs, BaseModel
+from dockerdo.utils import retry
 
 RE_MUTAGEN_ID = re.compile(r"Created session (\S+)")
 RE_MULTISPACE = re.compile(r"\s+")
@@ -227,7 +227,7 @@ def verify_container_state(session: Session) -> bool:
     return acceptable_state == "running"
 
 
-def run_ssh_master_process(session: Session, repeats: int = 1) -> Optional[Popen]:
+def run_ssh_master_process(session: Session, retries: int = 1) -> Optional[Popen]:
     """Runs an ssh command with the -M option to create a master connection. This will run indefinitely."""
     # Note that ssh options, such as the jump host, are set in the dockerdo dynamic ssh config file.
     command = (
@@ -236,21 +236,18 @@ def run_ssh_master_process(session: Session, repeats: int = 1) -> Optional[Popen
     if verbose:
         print(f"+ {command}", file=sys.stderr)
     if not dry_run:
-        failed_attempts = 0
-        for _ in range(repeats):
-            try:
-                return Popen(
-                    shlex.split(command), stdin=None, stdout=None, stderr=None, cwd=session.local_work_dir
-                )
-            except CalledProcessError as e:
-                failed_attempts += 1
-                if failed_attempts == repeats:
-                    prettyprint.error(f"Error running ssh master process: {e}")
-                    return None
-                else:
-                    time.sleep(2)
-                    continue
-        return None
+        def attempt():
+            return Popen(
+                shlex.split(command), stdin=None, stdout=None, stderr=None, cwd=session.local_work_dir
+            )
+
+        def on_error(e: Exception):
+            prettyprint.error(f"Error running ssh master process: {e}")
+
+        try:
+            return retry(attempt, on_error, retries=retries)
+        except CalledProcessError:
+            return None
     else:
         return None
 
