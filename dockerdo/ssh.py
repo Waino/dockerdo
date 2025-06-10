@@ -87,6 +87,7 @@ def parse_ssh_config(
             leading_spaces = RE_LEADING_SPACE.match(line)
             assert leading_spaces is not None   # due to Kleene star
             n_leading_spaces = len(leading_spaces.group())
+            line = line.rstrip('\n')
             if n_leading_spaces == 0:
                 cmd, host_name = line.split()
                 if not cmd == 'Host':
@@ -124,6 +125,7 @@ def write_ssh_config(
     with ssh_config_path.open("w") as fout:
         for host_name, block in host_blocks.items():
             for line in block:
+                line = line.rstrip('\n')
                 fout.write(f"{line}\n")
             fout.write("\n")
 
