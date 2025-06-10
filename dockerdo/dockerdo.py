@@ -938,6 +938,7 @@ def status(verbose: bool, dry_run: bool) -> int:
     if mutagen_status is None and not dry_run:
         prettyprint.error("Failed to get mutagen status")
     for mount_specs in session.mounts:
+        active = False
         if mount_specs.mount_type == "sshfs":
             active = mount_specs.near_path.is_mount()
         elif mount_specs.mount_type == "mutagen":
