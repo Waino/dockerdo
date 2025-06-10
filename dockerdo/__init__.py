@@ -2,7 +2,7 @@
 
 __author__ = """Stig-Arne Grönroos"""
 __email__ = "stig.gronroos@gmail.com"
-__version__ = "0.3.0dev1"
+__version__ = "0.3.0dev2"
 
 from .dockerdo import cli
 
