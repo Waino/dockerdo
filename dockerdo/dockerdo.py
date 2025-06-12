@@ -848,8 +848,8 @@ def mount(
 
 
 @cli.command()
-@click.argument("source_port", type=int)
-@click.argument("destination_port", type=int)
+@click.argument("local_port", type=int)
+@click.argument("container_port", type=int)
 @click.option(
     "--ensure",
     is_flag=True,
@@ -861,10 +861,8 @@ def mount(
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def forward(
-    source_port: int,
-    destination_port: int,
-    destination_host: Literal["remote", "container"],
-    forward_type: Literal["mutagen"],
+    local_port: int,
+    container_port: int,
     verbose: bool,
     dry_run: bool,
 ) -> int:
@@ -875,8 +873,8 @@ def forward(
         return 1
 
     forward_specs = PortForwardSpecs(
-        source_port=source_port,
-        destination_port=destination_port,
+        local_port=local_port,
+        container_port=container_port,
     )
     with prettyprint.LongAction(
         host="local",
@@ -1029,6 +1027,8 @@ def status(verbose: bool, dry_run: bool) -> int:
                     active = forward_status.status == "forwarding"
         active_str = "Active" if active else "Inactive"
         prettyprint.info(f"{active_str:8s}:  {forward_specs.descr_str()}")
+        if not active and forward_status.lastError is not None:
+            prettyprint.error(f"  {forward_status.lastError}")
 
     # Check status of SSH sockets
     if session.remote_host is not None:
@@ -1049,7 +1049,7 @@ def status(verbose: bool, dry_run: bool) -> int:
     prettyprint.container_status(session.container_state)
     prettyprint.info("Session status:")
     rich.print(
-        session.model_dump_yaml(exclude={"container_state", "host_key_lines", "mounts"}),
+        session.model_dump_yaml(exclude={"container_state", "host_key_lines", "mounts", "port_forwards"}),
         file=sys.stderr,
     )
     session.save()

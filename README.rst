@@ -55,24 +55,29 @@ Features
 
 3. **Transparent Filesystem Access**:
 
-   - Uses SSHFS to mount container filesystems locally
+   - Uses SSHFS and Mutagen to mount container filesystems locally
    - Makes remote container files feel like they're on your local disk
    - Allows using local GUI tools to edit remote files: No need for X11 forwarding for GUI tools
 
-4. **Dockerfile Development Aid**:
+4. **Port Forwarding**:
+
+   - Supports port forwarding for services running in the container using Mutagen
+   - Makes remote services feel like they're running locally
+
+5. **Dockerfile Development Aid**:
 
    - Tracks file modifications and installation commands
    - `dockerdo history` command shows relevant commands for Dockerfile creation
    - Filters out local commands (like `man`, `diff`, `grep`) to keep history clean
 
-5. **Ease of Use**:
+6. **Ease of Use**:
 
    - Simple installation process (`uv` or `pip`)
    - Bash completion included
    - Supports different base distributions (Ubuntu, Alpine)
    - Can work with both local and remote Docker hosts
 
-6. **Better response to latency**:
+7. **Better response to latency**:
 
    - Over a slow connection, working normally over ssh causes user interface lag in the shell and TUI:
      it takes a moment for the remote host to respond to each keypress.
@@ -282,17 +287,21 @@ Caveats
       The files remain within the container unless copied out, making sshfs mounts unsuitable for persistent data storage.
       Sshfs doesn't suffer from weird file ownership.
 
-* **git has some quirks with sshfs.**
+* **git has some quirks with sshfs, use mutagen instead.**
 
-    * You will have to set ``git config --global --add safe.directory ${GIT_DIR}`` to avoid git warnings.
+    * The recommended workflow is to clone the repository on the local host, and then use mutagen to sync its contents to the container.
+      Mutagen will sync the work directories (the content files), but not the metadata in the ``.git`` directory.
+      This way, you can use your local git tools, and avoid the sshfs quirks.
+    * If you need the full git repository including ``.git`` in the container, you can use sshfs. 
+    * With sshfs, you will have to set ``git config --global --add safe.directory ${GIT_DIR}`` to avoid git warnings.
       You don't need to remember this command, git will remind you of it.
-    * Some git commands can be slower than normal.
+    * With sshfs, some git commands can be slower than normal.
 
 * **Avoid --network=host in Docker.**
   If you need to use network=host in Docker, you have to run sshd on a different port than 22.
   The standard Dockerfile overlay will not do this for you.
 
-* **On slow connections, sshfs can sometimes be slower to update the filesystem than you can run ``dodo`` commands.**
+* **On slow connections, sshfs / mutagen can sometimes be slower to update the filesystem than you can run ``dodo`` commands.**
   This can result in strange behavior, if you try to read the filesystem before it has been updated (e.g. files look empty or truncated).
   If this happens, have patience.
   You can use ``--remote_delay`` to help you have patience, by adding a delay to all remote commands:

@@ -604,12 +604,18 @@ def get_mutagen_status(session: Session, remote: bool = False) -> Optional[List[
         return None
 
 
+class MutagenForwardEndpoint(BaseModel):
+    protocol: Literal["tcp", "local"]
+    endpoint: str
+
+
 class MutagenForwardStatus(BaseModel):
     """Status of a mutagen forward. Only the fields we care about."""
     identifier: str
-    source: str
-    destination: str
+    source: MutagenForwardEndpoint
+    destination: MutagenForwardEndpoint
     status: str
+    lastError: Optional[str] = None
 
 
 def parse_mutagen_forward_status(output: str) -> List[MutagenForwardStatus]:
@@ -619,7 +625,7 @@ def parse_mutagen_forward_status(output: str) -> List[MutagenForwardStatus]:
 
 def get_mutagen_forward_status(session: Session) -> Optional[List[MutagenForwardStatus]]:
     """Get the status of all mutagen forwards"""
-    command = "mutagen forward list --template json"
+    command = 'mutagen forward list --template "{{ json . }}"'
     if verbose:
         print(f"+ {command}", file=sys.stderr)
     if dry_run:
@@ -647,6 +653,8 @@ def ensure_port_forwards(session: Session, dry_run: bool = False) -> None:
     Ensure that all port forwards are active.
     Idempotent: if a forward is already active, does nothing.
     """
+    if len(session.port_forwards) == 0:
+        return
     mutagen_forward_status: Optional[List[MutagenForwardStatus]]
     mutagen_forward_status = get_mutagen_forward_status(session)
     if mutagen_forward_status is None:
@@ -674,7 +682,9 @@ def ensure_mutagen_forward(
                 return
 
     # create forward
-    destination_host = session.container_host_alias + "_socket"
+    destination_ssh_part = (
+        f"{session.container_username}@{session.container_host_alias}:{session.ssh_port_on_remote_host}"
+    )
     ctx_mgr: AbstractContextManager
     if not in_background:
         ctx_mgr = prettyprint.LongAction(
@@ -688,8 +698,8 @@ def ensure_mutagen_forward(
     with ctx_mgr as task:
         command = (
             f"mutagen forward create"
-            f" tcp:localhost:{forward_specs.source_port}"
-            f" tcp:{destination_host}:{forward_specs.destination_port}"
+            f" tcp:localhost:{forward_specs.local_port}"
+            f" {destination_ssh_part}:tcp::{forward_specs.container_port}"
         )
         if verbose:
             print(f"+ {command}", file=sys.stderr)

@@ -100,14 +100,14 @@ class MountSpecs(BaseModel):
 
 
 class PortForwardSpecs(BaseModel):
-    source_port: int
-    destination_port: int
+    local_port: int
+    container_port: int
     # mutagen_id is None if not yet created
     mutagen_id: Optional[str] = None
 
     def descr_str(self) -> str:
         arrow = '--o'
-        return f"localhost:{self.source_port} {arrow} container:{self.destination_port}"
+        return f"localhost:{self.local_port} {arrow} container:{self.container_port}"
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, PortForwardSpecs):
@@ -119,15 +119,15 @@ class PortForwardSpecs(BaseModel):
         ):
             return False
         return (
-            self.source_port == other.source_port
-            and self.destination_port == other.destination_port
+            self.container_port == other.container_port
+            and self.local_port == other.local_port
         )
 
     def __hash__(self) -> int:
         return hash(
             (
-                self.source_port,
-                self.destination_port,
+                self.container_port,
+                self.local_port,
                 self.mutagen_id,
             )
         )
