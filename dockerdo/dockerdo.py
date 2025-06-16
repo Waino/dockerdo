@@ -1019,16 +1019,19 @@ def status(verbose: bool, dry_run: bool) -> int:
         prettyprint.error("Failed to get mutagen forward status")
     for forward_specs in session.port_forwards:
         active = False
+        last_error = None
         if mutagen_forward_status is None:
             active = False
         else:
             for forward_status in mutagen_forward_status:
                 if forward_status.identifier == forward_specs.mutagen_id:
                     active = forward_status.status == "forwarding"
+                    last_error = forward_status.lastError
+                    break
         active_str = "Active" if active else "Inactive"
         prettyprint.info(f"{active_str:8s}:  {forward_specs.descr_str()}")
-        if not active and forward_status.lastError is not None:
-            prettyprint.error(f"  {forward_status.lastError}")
+        if not active and last_error is not None:
+            prettyprint.error(f"  {last_error}")
 
     # Check status of SSH sockets
     if session.remote_host is not None:

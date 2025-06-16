@@ -451,13 +451,25 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenMo
     assert mount_specs.mount_type == "mutagen"
 
     # check if already mounted
+    my_status = None
     for status in mutagen_status:
         if status.identifier == mount_specs.mutagen_id:
-            if status.status == "watching":
-                return
+            my_status = status.status
+            break
+    if my_status == "watching":
+        return
 
     # mount. Note that mutagen uses the host alias with control socket
     far_host = mount_specs.get_far_host_name(session, suffix="_socket")
+    if my_status is None:
+        command = (
+            f"mutagen sync create"
+            f" {mount_specs.near_path}"
+            f" {far_host}:{mount_specs.far_path}"
+        )
+    else:
+        command = f"mutagen sync resume {mount_specs.mutagen_id}"
+
     ctx_mgr: AbstractContextManager
     if not in_background:
         ctx_mgr = prettyprint.LongAction(
@@ -471,11 +483,6 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenMo
     with ctx_mgr as task:
         if not dry_run:
             os.makedirs(mount_specs.near_path, exist_ok=True)
-        command = (
-            f"mutagen sync create"
-            f" {mount_specs.near_path}"
-            f" {far_host}:{mount_specs.far_path}"
-        )
         if verbose:
             print(f"+ {command}", file=sys.stderr)
         if not dry_run:
@@ -484,7 +491,7 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenMo
                 mount_specs.mutagen_id = parse_mutagen_id(output.decode("utf-8"))
                 session.save()
             except CalledProcessError as e:
-                prettyprint.error(f"Error running mutagen sync create: {e}")
+                prettyprint.error(f"Error running mutagen sync: {e}")
                 raise Exception(f"Failed to mount {mount_specs.descr_str()}")
         if task:
             task.set_status("OK")
@@ -519,7 +526,7 @@ def stop_sshfs_mount(mount_specs: MountSpecs) -> None:
         host="local",
         running_verb="Unmounting",
         done_verb="Unmounted" if not dry_run else "Would unmount",
-        running_message="container filesystem",
+        running_message=mount_specs.descr_str(),
     ) as task:
         run_local_command(f"fusermount -u {mount_specs.near_path}")
         task.set_status("OK")
@@ -534,7 +541,7 @@ def stop_mutagen_mount(mount_specs: MountSpecs) -> None:
         host="local",
         running_verb="Stopping",
         done_verb="Stopped" if not dry_run else "Would stop",
-        running_message="mutagen sync",
+        running_message=mount_specs.descr_str(),
     ) as task:
         run_local_command(f"mutagen sync pause {mount_specs.mutagen_id}")
         task.set_status("OK")
@@ -566,7 +573,7 @@ def remove_mutagen_mount(mount_specs: MountSpecs) -> None:
         host="local",
         running_verb="Stopping",
         done_verb="Stopped" if not dry_run else "Would stop",
-        running_message="mutagen sync",
+        running_message=mount_specs.descr_str(),
     ) as task:
         run_local_command(f"mutagen sync terminate {mount_specs.mutagen_id}")
         task.set_status("OK")
@@ -676,15 +683,27 @@ def ensure_mutagen_forward(
 ) -> None:
     """Ensure that the mutagen forward is active"""
     # check if already active
+    my_status = None
     for status in mutagen_forward_status:
         if status.identifier == forward_specs.mutagen_id:
-            if status.status == "forwarding":
-                return
+            my_status = status.status
+            break
+    if my_status == "forwarding":
+        return
 
     # create forward
     destination_ssh_part = (
         f"{session.container_username}@{session.container_host_alias}:{session.ssh_port_on_remote_host}"
     )
+    if my_status is None:
+        command = (
+            f"mutagen forward create"
+            f" tcp:localhost:{forward_specs.local_port}"
+            f" {destination_ssh_part}:tcp::{forward_specs.container_port}"
+        )
+    else:
+        command = f"mutagen forward resume {forward_specs.mutagen_id}"
+
     ctx_mgr: AbstractContextManager
     if not in_background:
         ctx_mgr = prettyprint.LongAction(
@@ -696,11 +715,6 @@ def ensure_mutagen_forward(
     else:
         ctx_mgr = nullcontext()
     with ctx_mgr as task:
-        command = (
-            f"mutagen forward create"
-            f" tcp:localhost:{forward_specs.local_port}"
-            f" {destination_ssh_part}:tcp::{forward_specs.container_port}"
-        )
         if verbose:
             print(f"+ {command}", file=sys.stderr)
         if not dry_run:
@@ -709,7 +723,7 @@ def ensure_mutagen_forward(
                 forward_specs.mutagen_id = parse_mutagen_forward_id(output.decode("utf-8"))
                 session.save()
             except CalledProcessError as e:
-                prettyprint.error(f"Error running mutagen forward create: {e}")
+                prettyprint.error(f"Error running mutagen forward: {e}")
                 raise Exception(f"Failed to create forward {forward_specs.descr_str()}")
         if task:
             task.set_status("OK")
@@ -725,7 +739,7 @@ def stop_mutagen_forward(forward_specs: PortForwardSpecs) -> None:
         host="local",
         running_verb="Stopping",
         done_verb="Stopped" if not dry_run else "Would stop",
-        running_message="mutagen forward",
+        running_message=forward_specs.descr_str(),
     ) as task:
         run_local_command(f"mutagen forward pause {forward_specs.mutagen_id}")
         task.set_status("OK")
@@ -739,7 +753,7 @@ def remove_mutagen_forward(forward_specs: PortForwardSpecs) -> None:
         host="local",
         running_verb="Stopping",
         done_verb="Stopped" if not dry_run else "Would stop",
-        running_message="mutagen forward",
+        running_message=forward_specs.descr_str(),
     ) as task:
         run_local_command(f"mutagen forward terminate {forward_specs.mutagen_id}")
         task.set_status("OK")
