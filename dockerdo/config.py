@@ -139,10 +139,12 @@ class Preset(BaseModel):
     always_interactive: bool = False
     container_username: str = "root"
     distro: str = "ubuntu"
-    docker_registry: Optional[str] = None
+    docker_registry_host: Optional[str] = None
+    docker_registry_port: Optional[int] = None
+    docker_namespace: Optional[str] = None
     docker_run_args: Optional[str] = None
     base_image: str = "ubuntu:latest"
-    image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}"
+    image_name_template: str = "dockerdo-{base_image_repository}:{base_image_tag}-{session_name}"
     record_inotify: bool = False
     startup_retries: int = 10
     remote_delay: float = 0.3
@@ -201,14 +203,14 @@ class Preset(BaseModel):
 class Session(BaseModel):
     """A dockerdo session"""
 
-    # Defaults from preset
+    # Defaults from preset, override on creation
     always_interactive: bool
     base_image: str
     container_username: str
     distro: str
-    docker_registry: Optional[str]
-    docker_run_args: Optional[str]
-    image_name_template: str
+    docker_registry_host: Optional[str]
+    docker_registry_port: Optional[int]
+    docker_namespace: Optional[str]
     record_inotify: bool
     startup_retries: int
     remote_delay: float
@@ -217,9 +219,14 @@ class Session(BaseModel):
     remote_host_build_dir: Path
     ssh_key_path: Path
 
+    # Default from preset, override on run
+    docker_run_args: Optional[str]
+    image_name_template: str
+
+    # Other fields
     container_name: str
     env: Dict[str, str] = Field(default_factory=dict)
-    image_tag: Optional[str] = None
+    image_reference: Optional[str] = None
     local_work_dir: Path
     name: str
     session_dir: Path
@@ -238,7 +245,9 @@ class Session(BaseModel):
         container_name: Optional[str],
         container_username: Optional[str],
         distro: Optional[str],
-        docker_registry: Optional[str],
+        docker_registry_host: Optional[str],
+        docker_registry_port: Optional[int],
+        docker_namespace: Optional[str],
         local: bool,
         local_work_dir: Path,
         preset: Preset,
@@ -305,10 +314,20 @@ class Session(BaseModel):
                 if remote_delay is not None
                 else preset.remote_delay
             )
-        registry = (
-            docker_registry
-            if docker_registry is not None
-            else preset.docker_registry
+        registry_host = (
+            docker_registry_host
+            if docker_registry_host is not None
+            else preset.docker_registry_host
+        )
+        registry_port = (
+            docker_registry_port
+            if docker_registry_port is not None
+            else preset.docker_registry_port
+        )
+        registry_namespace = (
+            docker_namespace
+            if docker_namespace is not None
+            else preset.docker_namespace
         )
         record_inotify = record_inotify or preset.record_inotify
         session = Session(
@@ -317,7 +336,9 @@ class Session(BaseModel):
             container_name=container_name,
             container_username=container_username,
             distro=distro,
-            docker_registry=registry,
+            docker_registry_host=registry_host,
+            docker_registry_port=registry_port,
+            docker_namespace=registry_namespace,
             docker_run_args=preset.docker_run_args,
             image_name_template=preset.image_name_template,
             local_work_dir=local_work_dir,

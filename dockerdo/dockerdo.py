@@ -46,7 +46,7 @@ from dockerdo.ssh import (
     remove_session_from_ssh_config,
     SSH_INCLUDE_BLOCK,
 )
-from dockerdo.utils import make_image_tag, retry
+from dockerdo.utils import make_image_reference, retry
 
 
 def load_preset(preset: str = '_default') -> Preset:
@@ -194,7 +194,9 @@ def install(no_bashrc: bool, no_ssh_config: bool, verbose: bool, dry_run: bool) 
 @click.option("--image", "base_image", type=str, help="Docker image")
 @click.option("--local", is_flag=True, help="Remote host is the same as local host")
 @click.option("--record", is_flag=True, help="Record filesystem events")
-@click.option("--registry", type=str, help="Docker registry", default=None)
+@click.option("--registry", type=str, help="Docker registry host", default=None)
+@click.option("--registry-port", type=int, help="Docker registry port", default=None)
+@click.option("--namespace", type=str, help="Docker registry namespace", default=None)
 @click.option("--remote", "remote_host", type=str, help="Remote host")
 @click.option(
     "--user", "container_username", type=str, help="Container username", default=None,
@@ -230,6 +232,8 @@ def init(
     local: bool,
     record: bool,
     registry: Optional[str],
+    registry_port: Optional[int],
+    namespace: Optional[str],
     startup_retries: Optional[int],
     remote_delay: Optional[float],
     remote_host: Optional[str],
@@ -254,7 +258,9 @@ def init(
         container_name=container,
         container_username=container_username,
         distro=distro,
-        docker_registry=registry,
+        docker_registry_host=registry,
+        docker_registry_port=registry_port,
+        docker_namespace=namespace,
         local=local,
         local_work_dir=cwd,
         preset=preset,
@@ -326,7 +332,7 @@ def overlay(
 
 @cli.command()
 @click.option("--remote", is_flag=True, help="Build on remote host")
-@click.option("-t", "--overlay-tag", type=str, help="Override image tag for the overlayed image", default=None)
+@click.option("-t", "--overlay-tag", type=str, help="Override image referece for the overlayed image", default=None)
 @click.option("-v", "--verbose", is_flag=True, help="Print commands")
 @click.option("-n", "--dry-run", is_flag=True, help="Do not execute commands")
 def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool) -> int:
@@ -340,8 +346,10 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
     dockerfile = cwd / "Dockerfile.dockerdo"
     if not dockerfile.exists():
         _overlay(session.distro, session.base_image, dry_run)
-    session.image_tag = overlay_tag if overlay_tag is not None else make_image_tag(
-        docker_registry=session.docker_registry,
+    session.image_reference = overlay_tag if overlay_tag is not None else make_image_reference(
+        docker_registry_host=session.docker_registry_host,
+        docker_registry_port=session.docker_registry_port,
+        docker_namespace=session.docker_namespace,
         base_image=session.base_image,
         session_name=session.name,
         image_name_template=session.image_name_template
@@ -357,7 +365,10 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
         ssh_key = f.read().strip()
 
     if remote:
-        build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile.name} ."
+        build_cmd = (
+            f"docker build -t {session.image_reference}"
+            " --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile.name} ."
+        )
         assert session.sshfs_remote_mount_point is not None
         destination = session.sshfs_remote_mount_point / dockerfile.name
         with prettyprint.LongAction(
@@ -382,7 +393,7 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
             host="remote",
             running_verb="Building",
             done_verb="Built" if not dry_run else "Would build",
-            running_message=f"image {session.image_tag} on {session.remote_host}",
+            running_message=f"image {session.image_reference} on {session.remote_host}",
         ) as task:
             # build the image on the remote host
             retval = run_remote_command(
@@ -395,12 +406,12 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
             else:
                 return retval
     else:
-        build_cmd = f"docker build -t {session.image_tag} --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile} ."
+        build_cmd = f"docker build -t {session.image_reference} --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile} ."
         with prettyprint.LongAction(
             host="local",
             running_verb="Building",
             done_verb="Built" if not dry_run else "Would build",
-            running_message=f"image {session.image_tag}",
+            running_message=f"image {session.image_reference}",
         ) as task:
             retval = run_local_command(
                 build_cmd,
@@ -423,19 +434,19 @@ def push(verbose: bool, dry_run: bool) -> int:
     session = load_session()
     if session is None:
         return 1
-    if session.image_tag is None:
+    if session.image_reference is None:
         prettyprint.error("Must 'dockerdo build' first")
         return 1
 
-    if session.docker_registry is not None:
+    if session.docker_registry_host is not None:
         with prettyprint.LongAction(
             host="remote",
             running_verb="Pushing",
             done_verb="Pushed" if not dry_run else "Would push",
-            running_message=f"image {session.image_tag}",
+            running_message=f"image {session.image_reference} to {session.docker_registry_host}",
         ) as task:
             retval = run_local_command(
-                f"docker push {session.image_tag}", cwd=session.local_work_dir
+                f"docker push {session.image_reference}", cwd=session.local_work_dir
             )
             if retval != 0:
                 return retval
@@ -447,10 +458,10 @@ def push(verbose: bool, dry_run: bool) -> int:
             host="remote",
             running_verb="Saving",
             done_verb="Saved" if not dry_run else "Would save",
-            running_message=f"image {session.image_tag}",
+            running_message=f"image {session.image_reference}",
         ) as task:
             retval = run_docker_save_pipe(
-                session.image_tag,
+                image_reference=session.image_reference,
                 local_work_dir=session.local_work_dir,
                 sshfs_remote_mount_point=sshfs_remote_mount_point,
             )
@@ -486,7 +497,7 @@ def run_or_start(
     in_background = set_execution_mode(verbose, dry_run)
     if session is None:
         return 1
-    if session.image_tag is None:
+    if session.image_reference is None:
         prettyprint.error("Must 'dockerdo build' first")
         return 1
     if not detect_ssh_agent():
@@ -507,7 +518,7 @@ def run_or_start(
         command = (
             f"docker run -d {docker_args_str}"
             f" -p {session.ssh_port_on_remote_host}:22 "
-            f" --name {session.container_name} {session.image_tag}"
+            f" --name {session.container_name} {session.image_reference}"
         )
     else:  # start
         command = f"docker start {docker_args_str} {session.container_name}"
@@ -967,9 +978,9 @@ def status(verbose: bool, dry_run: bool) -> int:
         prettyprint.warning(f"No Dockerfile found in {dockerfile}")
 
     # Check existence of image
-    if session.image_tag is not None:
-        prettyprint.info(f"Docker images with tag: {session.image_tag}")
-        command = f"docker images {session.image_tag}"
+    if session.image_reference is not None:
+        prettyprint.info(f"Docker images with tag: {session.image_reference}")
+        command = f"docker images {session.image_reference}"
         if session.remote_host is None:
             run_local_command(command, cwd=session.local_work_dir)
         else:
@@ -1199,21 +1210,21 @@ def rm(force: bool, delete: bool, verbose: bool, dry_run: bool) -> int:
 
     if delete:
         # Delete the image
-        if session.image_tag is not None:
+        if session.image_reference is not None:
             host: Literal["local", "remote"] = "local" if session.remote_host is None else "remote"
             with prettyprint.LongAction(
                 host=host,
                 running_verb="Deleting",
                 done_verb="Deleted" if not dry_run else "Would delete",
-                running_message=f"image {session.image_tag}",
+                running_message=f"image {session.image_reference}",
             ) as task:
                 if session.remote_host is not None:
                     retval = run_remote_command(
-                        f"docker rmi {session.image_tag}", session
+                        f"docker rmi {session.image_reference}", session
                     )
                 else:
                     retval = run_local_command(
-                        f"docker rmi {session.image_tag}", cwd=session.local_work_dir, silent=True
+                        f"docker rmi {session.image_reference}", cwd=session.local_work_dir, silent=True
                     )
                 if retval != 0:
                     return retval

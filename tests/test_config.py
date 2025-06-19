@@ -16,7 +16,9 @@ def test_session_from_opts_defaults():
             container_name=None,
             container_username="root",
             distro=None,
-            docker_registry=None,
+            docker_registry_host=None,
+            docker_registry_port=None,
+            docker_namespace=None,
             local=True,
             local_work_dir=Path("/obscure/workdir"),
             record_inotify=False,
@@ -34,9 +36,11 @@ def test_session_from_opts_defaults():
     assert session.container_name is not None
     assert session.container_username == "root"
     assert session.distro == "ubuntu"
-    assert session.docker_registry is None
+    assert session.docker_registry_host is None
+    assert session.docker_registry_port is None
+    assert session.docker_namespace is None
     assert session.docker_run_args is None
-    assert session.image_tag is None
+    assert session.image_reference is None
     assert session.local_work_dir == Path("/obscure/workdir")
     assert session.name == "1234a67890"
     assert session.record_inotify is False
@@ -73,7 +77,9 @@ def test_session_from_opts_override_all():
         remote_host="reykjavik",
         distro="alpine",
         base_image="alpine:latest",
-        docker_registry="docker.io",
+        docker_registry_host="docker.io",
+        docker_registry_port=443,
+        docker_namespace="myorg",
         docker_run_args="--rm",
         record_inotify=True,
         ssh_key_path=Path("/preset/key"),
@@ -88,7 +94,9 @@ def test_session_from_opts_override_all():
             container_name='my_container',
             container_username="ubuntu",
             distro="ubuntu",
-            docker_registry="harbor.local",
+            docker_registry_host="harbor.local",
+            docker_registry_port=5000,
+            docker_namespace="myorg",
             local=False,
             local_work_dir=Path("/another/workdir"),
             record_inotify=False,
@@ -106,8 +114,10 @@ def test_session_from_opts_override_all():
     assert session.container_name == "my_container"
     assert session.container_username == "ubuntu"
     assert session.distro == "ubuntu"
-    assert session.docker_registry == "harbor.local"
-    assert session.image_tag is None
+    assert session.docker_registry_host == "harbor.local"
+    assert session.docker_registry_port == 5000
+    assert session.docker_namespace == "myorg"
+    assert session.image_reference is None
     assert session.local_work_dir == Path("/another/workdir")
     assert session.name == "my_session"
     assert session.record_inotify is True   # always_record_inotify overrides record_inotify
@@ -155,7 +165,9 @@ def test_session_from_opts_override_some():
         remote_host="reykjavik",
         distro="alpine",
         base_image="alpine:latest",
-        docker_registry="docker.io",
+        docker_registry_host="docker.io",
+        docker_registry_port=443,
+        docker_namespace="myorg",
         docker_run_args="--rm",
         image_name_template="my-custom-template",
         startup_retries=5,
@@ -181,7 +193,9 @@ def test_session_from_opts_override_some():
             container_name='my_container',
             container_username="alpine",
             distro=None,
-            docker_registry=None,
+            docker_registry_host=None,
+            docker_registry_port=None,
+            docker_namespace="different_namespace",
             local=False,
             local_work_dir=Path("/another/workdir"),
             record_inotify=False,
@@ -199,8 +213,10 @@ def test_session_from_opts_override_some():
     assert session.container_name == "my_container"
     assert session.container_username == "alpine"
     assert session.distro == "alpine"
-    assert session.docker_registry == "docker.io"
-    assert session.image_tag is None
+    assert session.docker_registry_host == "docker.io"
+    assert session.docker_registry_port == 443
+    assert session.docker_namespace == "different_namespace"
+    assert session.image_reference is None
     assert session.local_work_dir == Path("/another/workdir")
     assert session.name == "my_session"
     assert session.record_inotify is True   # preset record_inotify
@@ -246,7 +262,9 @@ def test_session_env_management():
         remote_host="reykjavik",
         distro="alpine",
         base_image="alpine:latest",
-        docker_registry="docker.io",
+        docker_registry_host="docker.io",
+        docker_registry_port=443,
+        docker_namespace="myorg",
         docker_run_args="--rm",
         record_inotify=True,
     )
@@ -260,7 +278,9 @@ def test_session_env_management():
             container_name='my_container',
             container_username="alpine",
             distro=None,
-            docker_registry=None,
+            docker_registry_host=None,
+            docker_registry_port=None,
+            docker_namespace=None,
             local=False,
             local_work_dir=Path("/another/workdir"),
             record_inotify=False,
@@ -294,7 +314,9 @@ def test_session_from_opts_persistent_already_exists():
         remote_host="reykjavik",
         distro="alpine",
         base_image="alpine:latest",
-        docker_registry="docker.io",
+        docker_registry_host="docker.io",
+        docker_registry_port=443,
+        docker_namespace="myorg",
         docker_run_args="--rm",
         record_inotify=True,
     )
@@ -309,7 +331,9 @@ def test_session_from_opts_persistent_already_exists():
                 container_name='my_container',
                 container_username="ubuntu",
                 distro="ubuntu",
-                docker_registry="harbor.local",
+                docker_registry_host="harbor.local",
+                docker_registry_port=5000,
+                docker_namespace="different_namespace",
                 local=False,
                 local_work_dir=Path("/another/workdir"),
                 record_inotify=False,
@@ -330,7 +354,9 @@ def test_session_dry_run():
         remote_host="reykjavik",
         distro="alpine",
         base_image="alpine:latest",
-        docker_registry="docker.io",
+        docker_registry_host="docker.io",
+        docker_registry_port=443,
+        docker_namespace="myorg",
         docker_run_args="",
         record_inotify=True,
     )
@@ -344,7 +370,9 @@ def test_session_dry_run():
             container_name='my_container',
             container_username="alpine",
             distro=None,
-            docker_registry=None,
+            docker_registry_host=None,
+            docker_registry_port=None,
+            docker_namespace=None,
             local=False,
             local_work_dir=Path("/another/workdir"),
             record_inotify=False,

@@ -20,27 +20,36 @@ def ephemeral_container_name() -> str:
     return name
 
 
-def make_image_tag(
-    docker_registry: Optional[str],
+def make_image_reference(
+    docker_registry_host: Optional[str],
+    docker_registry_port: Optional[int],
+    docker_namespace: Optional[str],
     base_image: str,
     session_name: str,
-    image_name_template: str = "dockerdo-{base_image}:{base_image_tag}-{session_name}",
+    image_name_template: str = "dockerdo-{base_image_repository}:{base_image_tag}-{session_name}",
 ) -> str:
     if ":" in base_image:
         base_image, base_image_tag = base_image.split(":")
     else:
         base_image_tag = "latest"
     if "/" in base_image:
-        base_image = base_image.split("/")[-1]
-    image_tag = image_name_template.format(
-        base_image=base_image,
+        base_image_repository = base_image.split("/")[-1]
+    else:
+        base_image_repository = base_image
+    image_name = image_name_template.format(
+        base_image_repository=base_image_repository,
         base_image_tag=base_image_tag,
         session_name=session_name,
     )
-    if docker_registry is None or len(docker_registry) == 0:
-        return image_tag
+    if docker_namespace is not None:
+        image_name = f"{docker_namespace}/{image_name}"
+    if docker_registry_host is None or len(docker_registry_host) == 0:
+        return image_name
     else:
-        return f"{docker_registry}/{image_tag}"
+        docker_registry = docker_registry_host
+        if docker_registry_port is not None:
+            docker_registry += f":{docker_registry_port}"
+        return f"{docker_registry}/{image_name}"
 
 
 def empty_or_nonexistent(path: Path) -> bool:

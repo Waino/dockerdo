@@ -152,12 +152,12 @@ def run_container_command(command: str, session: Session, interactive: bool = Fa
 
 
 def run_docker_save_pipe(
-    image_tag: str, local_work_dir: Path, sshfs_remote_mount_point: Path
+    image_reference: str, local_work_dir: Path, sshfs_remote_mount_point: Path
 ) -> int:
     """Run docker save, piping the output via pigz to compress it, and finally into a file"""
     try:
-        command = f"docker save {image_tag}"
-        output_path = sshfs_remote_mount_point / f"{image_tag}.tar.gz"
+        command = f"docker save {image_reference}"
+        output_path = sshfs_remote_mount_point / f"{image_reference}.tar.gz"
         if verbose:
             print(f"+ {command} | pigz > {output_path}", file=sys.stderr)
         args = shlex.split(command)
