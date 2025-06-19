@@ -236,7 +236,7 @@ def run_ssh_master_process(session: Session, retries: int = 1) -> Optional[Popen
     """Runs an ssh command with the -M option to create a master connection. This will run indefinitely."""
     # Note that ssh options, such as the jump host, are set in the dockerdo dynamic ssh config file.
     command = (
-        f"ssh -M -N -S {session.session_dir}/ssh-socket-container {session.container_host_alias}"
+        f"ssh -M -N {session.container_host_alias}_socket"
     )
     if verbose:
         print(f"+ {command}", file=sys.stderr)
