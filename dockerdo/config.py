@@ -5,6 +5,7 @@ import json
 import time
 import re
 import os
+import hashlib
 from pathlib import Path
 from pydantic import BaseModel as PydanticBaseModel
 from pydantic import Field, ConfigDict, field_validator, model_validator
@@ -40,8 +41,6 @@ class MountSpecs(BaseModel):
     far_host: Literal["remote", "container"] = "container"
     far_path: Path
     mount_type: Literal["sshfs", "mutagen", "docker"]
-    # mutagen_id is None if not a mutagen mount, or if not yet created
-    mutagen_id: Optional[str] = None
 
     @model_validator(mode='after')
     def check_hosts(self) -> "MountSpecs":
@@ -50,8 +49,6 @@ class MountSpecs(BaseModel):
                 raise ValueError("docker mount can only be from remote to container")
         if self.near_host == "remote" and self.far_host == "remote":
             raise ValueError("can't mount from remote to remote")
-        if self.mutagen_id is not None and self.mount_type != "mutagen":
-            raise ValueError("mutagen_id can only be set if mount_type is mutagen")
         # TODO: implement sshfs and mutagen remote <-> container mounts
         if self.near_host == "remote" and self.mount_type != "docker":
             raise ValueError("currently only docker type remote -> container mount supported")
@@ -69,14 +66,21 @@ class MountSpecs(BaseModel):
         else:
             return "localhost"
 
+    def get_mutagen_id(self, session: "Session") -> Optional[str]:
+        """
+        The id is deterministic, and available even if the mount is not yet created.
+        mutagen_id is None if not a mutagen mount.
+        """
+        if self.mount_type != "mutagen":
+            return None
+        path_hash = hashlib.md5(
+            f"{self.near_path}_{self.far_path}".encode(),
+            usedforsecurity=False,
+        ).hexdigest()
+        return f"dockerdo_{session.name}_{self.near_host}_{self.far_host}_{path_hash}"
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, MountSpecs):
-            return False
-        if (
-            self.mutagen_id is not None
-            and other.mutagen_id is not None
-            and self.mutagen_id != other.mutagen_id
-        ):
             return False
         return (
             self.near_host == other.near_host
@@ -94,7 +98,6 @@ class MountSpecs(BaseModel):
                 self.far_host,
                 self.far_path,
                 self.mount_type,
-                self.mutagen_id,
             )
         )
 
@@ -102,21 +105,19 @@ class MountSpecs(BaseModel):
 class PortForwardSpecs(BaseModel):
     local_port: int
     container_port: int
-    # mutagen_id is None if not yet created
-    mutagen_id: Optional[str] = None
 
     def descr_str(self) -> str:
         arrow = '--o'
         return f"localhost:{self.local_port} {arrow} container:{self.container_port}"
 
+    def get_mutagen_id(self, session: "Session") -> Optional[str]:
+        """
+        The id is deterministic, and available even if the forwarding is not yet created.
+        """
+        return f"dockerdo_{session.name}_{self.local_port}_{self.container_port}"
+
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, PortForwardSpecs):
-            return False
-        if (
-            self.mutagen_id is not None
-            and other.mutagen_id is not None
-            and self.mutagen_id != other.mutagen_id
-        ):
             return False
         return (
             self.container_port == other.container_port
@@ -128,7 +129,6 @@ class PortForwardSpecs(BaseModel):
             (
                 self.container_port,
                 self.local_port,
-                self.mutagen_id,
             )
         )
 
