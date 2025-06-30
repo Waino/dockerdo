@@ -119,7 +119,17 @@ def install(no_bashrc: bool, no_ssh_config: bool, verbose: bool, dry_run: bool) 
         ) as task:
             if not dry_run:
                 with open(user_config_path, "w") as fout:
-                    fout.write(initial_config.model_dump_yaml())
+                    # Exclude the default values from the example preset
+                    exclude = {
+                        'default': {'description'},
+                        'presets': {
+                            '__all__': {
+                                field for field in Preset.model_fields.keys()
+                                if field not in ("description", "record_inotify", "mounts")
+                            }
+                        }
+                    }
+                    fout.write(initial_config.model_dump_yaml(exclude=exclude))
             task.set_status("OK")
     else:
         prettyprint.warning(f"Not overwriting existing config file {user_config_path}")

@@ -30,7 +30,7 @@ class BaseModel(PydanticBaseModel):
 
     model_config = ConfigDict(extra='ignore')
 
-    def model_dump_yaml(self, exclude: Optional[set[str]] = None) -> str:
+    def model_dump_yaml(self, exclude: Optional[set[str]] | Dict[str, Any] = None) -> str:
         """Dump the model as yaml"""
         return yaml.dump(self.model_dump(mode="json", exclude=exclude), sort_keys=True)
 
@@ -192,7 +192,22 @@ class Preset(BaseModel):
             default: Preset
             presets: Dict[str, Any]
 
-        return UserConfig(default=cls(), presets={})
+        # A preset for dockerfile development, included by default
+        # Shows how to mount the full container filesystem into a local directory
+        dockerfile_preset = Preset(
+            description="Dockerfile development",
+            record_inotify=True,
+            mounts=[
+                MountSpecs(
+                    near_host="local",
+                    near_path=Path("./container"),
+                    far_host="container",
+                    far_path=Path("/"),
+                    mount_type="sshfs",
+                )
+            ],
+        )
+        return UserConfig(default=cls(), presets={'dockerfile': dockerfile_preset})
 
     @classmethod
     def from_yaml(cls, yaml_str: str) -> "Preset":
