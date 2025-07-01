@@ -377,7 +377,7 @@ def build(remote: bool, overlay_tag: Optional[str], verbose: bool, dry_run: bool
     if remote:
         build_cmd = (
             f"docker build -t {session.image_reference}"
-            " --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile.name} ."
+            f" --build-arg SSH_PUB_KEY='{ssh_key}' -f {dockerfile.name} ."
         )
         assert session.sshfs_remote_mount_point is not None
         destination = session.sshfs_remote_mount_point / dockerfile.name
