@@ -23,6 +23,7 @@ ARROWS = {
     "docker": "->>",
 }
 ENV_VAR_REF = re.compile(r"\{host_env\.(\w+)\}")
+MUTAGEN_FORBIDDEN_ID_CHARS = re.compile(r"[^a-zA-Z0-9-]")
 
 
 class BaseModel(PydanticBaseModel):
@@ -77,7 +78,9 @@ class MountSpecs(BaseModel):
             f"{self.near_path}_{self.far_path}".encode(),
             usedforsecurity=False,
         ).hexdigest()
-        return f"dockerdo_{session.name}_{self.near_host}_{self.far_host}_{path_hash}"
+        id = f"dockerdo-{session.name}-{self.near_host}-{self.far_host}-{path_hash}"
+        id = MUTAGEN_FORBIDDEN_ID_CHARS.sub("-", id)
+        return id
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, MountSpecs):
@@ -110,11 +113,13 @@ class PortForwardSpecs(BaseModel):
         arrow = '--o'
         return f"localhost:{self.local_port} {arrow} container:{self.container_port}"
 
-    def get_mutagen_id(self, session: "Session") -> Optional[str]:
+    def get_mutagen_id(self, session: "Session") -> str:
         """
         The id is deterministic, and available even if the forwarding is not yet created.
         """
-        return f"dockerdo_{session.name}_{self.local_port}_{self.container_port}"
+        id = f"dockerdo-{session.name}-{self.local_port}-{self.container_port}"
+        id = MUTAGEN_FORBIDDEN_ID_CHARS.sub("-", id)
+        return id
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, PortForwardSpecs):
