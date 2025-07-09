@@ -329,9 +329,13 @@ class MutagenMountStatus(BaseModel):
     """Status of a mutagen sync. Only the fields we care about."""
 
     identifier: str
+    name: Optional[str] = None
     alpha: Union[MutagenEndpointLocal, MutagenEndpointSsh] = Field(discriminator="protocol")
     beta: Union[MutagenEndpointLocal, MutagenEndpointSsh] = Field(discriminator="protocol")
     status: str
+
+    def get_id(self):
+        return self.name if self.name is not None else self.identifier
 
 
 def ensure_mounts(session: Session) -> None:
@@ -393,19 +397,14 @@ def ensure_sshfs_mount(mount_specs: MountSpecs, session: Session) -> None:
             f" {far_host}:{mount_specs.far_path}"
             f" {mount_specs.near_path}"
         )
-        if verbose:
-            print(f"+ {command}", file=sys.stderr)
-        if not dry_run:
-            retval = run_local_command(
-                command,
-                cwd=session.local_work_dir,
-                silent=in_background,
-            )
-            if retval != 0:
-                raise Exception(f"Failed to mount {mount_specs.descr_str()}")
-            if task and mount_specs.near_path.is_mount():
-                task.set_status("OK")
-        elif task:
+        retval = run_local_command(
+            command,
+            cwd=session.local_work_dir,
+            silent=in_background,
+        )
+        if retval != 0:
+            raise Exception(f"Failed to mount {mount_specs.descr_str()}")
+        if dry_run or (task and mount_specs.near_path.is_mount()):
             task.set_status("OK")
 
 
@@ -443,7 +442,7 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenMo
     my_id = mount_specs.get_mutagen_id(session)
     my_status = None
     for status in mutagen_status:
-        if status.identifier == my_id:
+        if status.get_id() == my_id:
             my_status = status.status
             break
     if my_status == "watching":
@@ -473,8 +472,6 @@ def ensure_mutagen_mount(mount_specs: MountSpecs, mutagen_status: List[MutagenMo
     with ctx_mgr as task:
         if not dry_run:
             os.makedirs(mount_specs.near_path, exist_ok=True)
-        if verbose:
-            print(f"+ {command}", file=sys.stderr)
         if not dry_run:
             try:
                 run_local_command(command, cwd=session.local_work_dir, silent=in_background)
@@ -614,6 +611,10 @@ class MutagenForwardStatus(BaseModel):
     destination: MutagenForwardEndpoint
     status: str
     lastError: Optional[str] = None
+    name: Optional[str] = None
+
+    def get_id(self):
+        return self.name if self.name is not None else self.identifier
 
 
 def parse_mutagen_forward_status(output: str) -> List[MutagenForwardStatus]:
@@ -667,7 +668,7 @@ def ensure_mutagen_forward(
     my_status = None
     my_id = forward_specs.get_mutagen_id(session)
     for status in mutagen_forward_status:
-        if status.identifier == my_id:
+        if status.get_id() == my_id:
             my_status = status.status
             break
     if my_status == "forwarding":
@@ -697,8 +698,6 @@ def ensure_mutagen_forward(
     else:
         ctx_mgr = nullcontext()
     with ctx_mgr as task:
-        if verbose:
-            print(f"+ {command}", file=sys.stderr)
         if not dry_run:
             try:
                 run_local_command(command, cwd=session.local_work_dir, silent=in_background)

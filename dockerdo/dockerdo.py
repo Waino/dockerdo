@@ -1029,7 +1029,7 @@ def status(verbose: bool, dry_run: bool) -> int:
                 active = False
             else:
                 for status in mutagen_status:
-                    if status.identifier == mount_specs.get_mutagen_id(session):
+                    if status.get_id() == mount_specs.get_mutagen_id(session):
                         active = status.status == "watching"
         active_str = "Active" if active else "Inactive"
         prettyprint.info(f"{active_str:8s}:  {mount_specs.descr_str()}")
@@ -1045,7 +1045,7 @@ def status(verbose: bool, dry_run: bool) -> int:
             active = False
         else:
             for forward_status in mutagen_forward_status:
-                if forward_status.identifier == forward_specs.get_mutagen_id(session):
+                if forward_status.get_id() == forward_specs.get_mutagen_id(session):
                     active = forward_status.status == "forwarding"
                     last_error = forward_status.lastError
                     break
