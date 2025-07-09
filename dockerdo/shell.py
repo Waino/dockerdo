@@ -91,10 +91,10 @@ def make_remote_command(
     escaped_command = " ".join(shlex.quote(token) for token in shlex.split(command))
     # ssh-socket-remote created when activating the session
     cwd = session.remote_host_build_dir if cwd is None else cwd
-    tty_flag = "-t" if use_tty else ""
+    tty_flag = "-tt -q" if use_tty else "-n"
     wrapped_command = (
         f"ssh {tty_flag}"
-        f" -n -S {session.session_dir}/ssh-socket-remote"
+        f" -S {session.session_dir}/ssh-socket-remote"
         f" {session.remote_host}"
         f' "cd {cwd} && {escaped_command}"'
     )
